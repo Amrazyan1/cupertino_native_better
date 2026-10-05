@@ -52,6 +52,10 @@ public class CupertinoNativePlugin: NSObject, FlutterPlugin {
     let floatingIslandFactory = FloatingIslandFactory(messenger: registrar.messenger())
     registrar.register(floatingIslandFactory, withId: "CNFloatingIsland")
 
+    // Navigation bar (morphing glass bar buttons)
+    let navigationBarFactory = CNNavigationBarFactory(messenger: registrar.messenger())
+    registrar.register(navigationBarFactory, withId: "CNNavigationBar")
+
     // Search scaffold (UITabBarController with UISearchController for iOS 26+ liquid glass)
     // Factory is available on all iOS, runtime check happens inside
     let searchScaffoldFactory = CNSearchScaffoldViewFactory(messenger: registrar.messenger())

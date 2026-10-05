@@ -30,6 +30,8 @@
 /// - [CNGlassButtonGroup] - Grouped buttons with unified glass effects
 /// - [CNSearchBar] - Expandable search bar with animations
 /// - [CNToast] - Toast notifications with glass effects
+/// - [CNNavigationBar] - Top bar whose glass buttons morph between screens
+/// - [CNNavigationBar] - Top bar whose glass buttons morph between screens
 /// - [LiquidGlassContainer] - Apply glass effects to any widget
 ///
 /// ## Platform Support
@@ -69,6 +71,7 @@ export 'components/liquid_glass_container.dart';
 export 'components/search_bar.dart';
 export 'components/toast.dart';
 export 'components/floating_island.dart';
+export 'components/navigation_bar.dart';
 export 'components/search_scaffold.dart';
 export 'components/experimental/glass_card.dart';
 
