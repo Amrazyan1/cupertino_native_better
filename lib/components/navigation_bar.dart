@@ -21,6 +21,7 @@ class CNNavigationBarItem {
     this.label,
     this.onPressed,
     this.enabled = true,
+    this.color,
   }) : assert(icon != null || label != null);
 
   /// Stable identity of the item. When two consecutive configurations share
@@ -40,6 +41,13 @@ class CNNavigationBarItem {
 
   /// Whether the item can be tapped.
   final bool enabled;
+
+  /// Colour of the item's label and icon, overriding the group default
+  /// (white on a tinted group, the primary label colour otherwise) — e.g. a
+  /// dark "Next" on a light tint. Falls back to [icon]'s colour when null.
+  final Color? color;
+
+  Color? get _effectiveColor => color ?? icon?.color;
 }
 
 /// One Liquid Glass capsule in a [CNNavigationBar], holding one or more items.
@@ -58,11 +66,13 @@ class CNNavigationBarGroup {
     VoidCallback? onPressed,
     this.tint,
     bool enabled = true,
+    Color? color,
   }) : items = [
          CNNavigationBarItem(
            icon: icon,
            onPressed: onPressed,
            enabled: enabled,
+           color: color,
          ),
        ];
 
@@ -180,8 +190,11 @@ class _CNNavigationBarState extends State<CNNavigationBar> {
                     'id': itemId,
                     if (item.icon != null) 'symbol': item.icon!.name,
                     if (item.icon != null) 'symbolSize': item.icon!.size,
-                    if (item.icon?.color != null)
-                      'color': resolveColorToArgb(item.icon!.color, context),
+                    if (item._effectiveColor != null)
+                      'color': resolveColorToArgb(
+                        item._effectiveColor,
+                        context,
+                      ),
                     if (item.label != null) 'label': item.label,
                     'enabled': item.enabled && item.onPressed != null,
                   };
@@ -399,7 +412,7 @@ class _FallbackGroup extends StatelessWidget {
                     Icon(
                       _fallbackIcon(item.icon!.name),
                       size: item.icon!.size + 3,
-                      color: item.icon!.color ?? foreground,
+                      color: item._effectiveColor ?? foreground,
                     ),
                   if (item.icon != null && item.label != null)
                     const SizedBox(width: 6),
@@ -407,7 +420,7 @@ class _FallbackGroup extends StatelessWidget {
                     Text(
                       item.label!,
                       style: TextStyle(
-                        color: foreground,
+                        color: item._effectiveColor ?? foreground,
                         fontSize: 17,
                         fontWeight: FontWeight.w500,
                       ),
