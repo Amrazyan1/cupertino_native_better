@@ -24,6 +24,7 @@ class CNTabBarItem {
     this.activeCustomIcon,
     this.imageAsset,
     this.activeImageAsset,
+    this.originalColors = false,
   });
 
   /// Optional tab item label.
@@ -66,6 +67,11 @@ class CNTabBarItem {
   /// Optional image asset for selected state.
   /// If not provided, [imageAsset] is used for both states.
   final CNImageAsset? activeImageAsset;
+
+  /// Draw [imageAsset] / [activeImageAsset] in their own colours instead of
+  /// as tinted templates — e.g. a user's avatar photo. The image is drawn at
+  /// [CNImageAsset.size] (aspect-fill), raster data included. iOS only.
+  final bool originalColors;
 }
 
 /// A Cupertino-native tab bar. Uses native UITabBar/NSTabView style visuals.
@@ -288,6 +294,7 @@ class _CNTabBarState extends State<CNTabBar> {
   int? _lastRightCount;
   double? _lastSplitSpacing;
   double? _lastIconSize;
+  String? _lastImageKey;
   String? _lastLabelFontFamily;
   double? _lastLabelFontSize;
 
@@ -726,6 +733,7 @@ class _CNTabBarState extends State<CNTabBar> {
       'activeImageAssetData': activeImageAssetData,
       'imageAssetFormats': imageAssetFormats,
       'activeImageAssetFormats': activeImageAssetFormats,
+      'originalColors': widget.items.map((e) => e.originalColors).toList(),
       'iconScale': capturedDevicePixelRatio,
       'sfSymbolSizes': sizes,
       'sfSymbolColors': colors,
@@ -989,11 +997,15 @@ class _CNTabBarState extends State<CNTabBar> {
       final symbolsChanged = _lastSymbols?.join('|') != symbols.join('|');
       final activeSymbolsChanged =
           _lastActiveSymbols?.join('|') != activeSymbols.join('|');
+      // Image assets can change on their own (e.g. an avatar that loads later).
+      final imageKey = _imageKey();
+      final imagesChanged = _lastImageKey != imageKey;
 
       if (badgesChanged &&
           !labelsChanged &&
           !symbolsChanged &&
-          !activeSymbolsChanged) {
+          !activeSymbolsChanged &&
+          !imagesChanged) {
         // Only badges changed - use lightweight update
         await ch.invokeMethod('setBadges', {'badges': badges});
         _lastBadges = badges;
@@ -1008,7 +1020,8 @@ class _CNTabBarState extends State<CNTabBar> {
           symbolsChanged ||
           activeSymbolsChanged ||
           badgesChanged ||
-          iconSizeChanged) {
+          iconSizeChanged ||
+          imagesChanged) {
         // Re-render custom icons if items changed
         final iconBytes = await _renderCustomIcons();
         final customIconBytes = iconBytes[0];
@@ -1069,6 +1082,7 @@ class _CNTabBarState extends State<CNTabBar> {
           'activeImageAssetData': activeImageAssetData,
           'imageAssetFormats': imageAssetFormats,
           'activeImageAssetFormats': activeImageAssetFormats,
+          'originalColors': widget.items.map((e) => e.originalColors).toList(),
           'iconScale': iconScale,
           'selectedIndex': widget.currentIndex,
           'sfSymbolSizes': sizes,
@@ -1078,6 +1092,7 @@ class _CNTabBarState extends State<CNTabBar> {
         _lastActiveSymbols = activeSymbols;
         _lastBadges = badges;
         _lastIconSize = widget.iconSize;
+        _lastImageKey = imageKey;
         // Re-measure width in case content changed
         _requestIntrinsicSize();
       }
@@ -1144,8 +1159,21 @@ class _CNTabBarState extends State<CNTabBar> {
         .map((e) => e.activeIcon?.name ?? e.icon?.name ?? '')
         .toList();
     _lastBadges = widget.items.map((e) => e.badge ?? '').toList();
+    _lastImageKey = _imageKey();
     // Note: Custom icon bytes are cached in _syncPropsToNativeIfNeeded when rendered
   }
+
+  /// Identity of every item's image assets, so swapping one (e.g. new avatar
+  /// bytes) re-sends the items even when labels and symbols are unchanged.
+  String _imageKey() => widget.items
+      .map((e) {
+        String asset(CNImageAsset? a) => a == null
+            ? '-'
+            : '${a.assetPath}:${a.imageData == null ? 0 : identityHashCode(a.imageData)}'
+                  ':${a.imageData?.length}:${a.size}';
+        return '${asset(e.imageAsset)}/${asset(e.activeImageAsset)}/${e.originalColors}';
+      })
+      .join('|');
 
   Future<void> _requestIntrinsicSize() async {
     if (widget.height != null) return;

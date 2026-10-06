@@ -24,6 +24,7 @@ class CupertinoTabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelega
   private var currentActiveImageAssetData: [Data?] = []
   private var currentImageAssetFormats: [String] = []
   private var currentActiveImageAssetFormats: [String] = []
+  private var currentOriginalColors: [Bool] = []
   private var iconScale: CGFloat = UIScreen.main.scale
   private var leftInsetVal: CGFloat = 0
   private var rightInsetVal: CGFloat = 0
@@ -48,6 +49,7 @@ class CupertinoTabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelega
     var activeImageAssetData: [Data?] = []
     var imageAssetFormats: [String] = []
     var activeImageAssetFormats: [String] = []
+    var originalColors: [Bool] = []
     var iconScale: CGFloat = UIScreen.main.scale
     var sizes: [NSNumber?] = []
     var colors: [NSNumber] = [] // ignored; use tintColor
@@ -81,6 +83,7 @@ class CupertinoTabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelega
       }
       imageAssetFormats = (dict["imageAssetFormats"] as? [String]) ?? []
       activeImageAssetFormats = (dict["activeImageAssetFormats"] as? [String]) ?? []
+      originalColors = ((dict["originalColors"] as? [NSNumber]) ?? []).map { $0.boolValue }
       if let scale = dict["iconScale"] as? NSNumber {
         iconScale = CGFloat(truncating: scale)
       }
@@ -178,7 +181,11 @@ class CupertinoTabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelega
         }
 
         let title = (i < labels.count && !labels[i].isEmpty) ? labels[i] : nil
-        let item = UITabBarItem(title: title, image: image, selectedImage: selectedImage)
+        let item = UITabBarItem(
+          title: title,
+          image: Self.applyOriginalColors(image, originalColors, i, size: imgSize),
+          selectedImage: Self.applyOriginalColors(selectedImage, originalColors, i, size: imgSize)
+        )
         if i < badges.count && !badges[i].isEmpty {
           item.badgeValue = badges[i]
         }
@@ -415,6 +422,7 @@ class CupertinoTabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelega
     self.currentImageAssetData = imageAssetData
     self.currentActiveImageAssetData = activeImageAssetData
     self.currentImageAssetFormats = imageAssetFormats
+    self.currentOriginalColors = originalColors
     self.currentActiveImageAssetFormats = activeImageAssetFormats
     self.iconScale = iconScale
     self.leftInsetVal = leftInset
@@ -462,6 +470,7 @@ channel.setMethodCallHandler { [weak self] call, result in
           var activeImageAssetData: [Data?] = []
           var imageAssetFormats: [String] = []
           var activeImageAssetFormats: [String] = []
+          var originalColors: [Bool] = []
           if let bytesArray = args["customIconBytes"] as? [FlutterStandardTypedData?] {
             customIconBytes = bytesArray.map { $0?.data }
           }
@@ -478,6 +487,7 @@ channel.setMethodCallHandler { [weak self] call, result in
           }
           imageAssetFormats = (args["imageAssetFormats"] as? [String]) ?? []
           activeImageAssetFormats = (args["activeImageAssetFormats"] as? [String]) ?? []
+          originalColors = ((args["originalColors"] as? [NSNumber]) ?? []).map { $0.boolValue }
           if let scale = args["iconScale"] as? NSNumber {
             self.iconScale = CGFloat(truncating: scale)
           }
@@ -493,6 +503,7 @@ channel.setMethodCallHandler { [weak self] call, result in
           self.currentImageAssetData = imageAssetData
           self.currentActiveImageAssetData = activeImageAssetData
           self.currentImageAssetFormats = imageAssetFormats
+          self.currentOriginalColors = originalColors
           self.currentActiveImageAssetFormats = activeImageAssetFormats
           // Store icon sizes for dynamic height calculation
           self.currentIconSizes = sizes.compactMap { $0?.doubleValue }.map { CGFloat($0) }
@@ -543,7 +554,11 @@ channel.setMethodCallHandler { [weak self] call, result in
               }
 
               let title = (i < labels.count && !labels[i].isEmpty) ? labels[i] : nil
-              let item = UITabBarItem(title: title, image: image, selectedImage: selectedImage)
+              let item = UITabBarItem(
+          title: title,
+          image: Self.applyOriginalColors(image, originalColors, i, size: imgSize),
+          selectedImage: Self.applyOriginalColors(selectedImage, originalColors, i, size: imgSize)
+        )
               if i < badges.count && !badges[i].isEmpty {
                 item.badgeValue = badges[i]
               }
@@ -603,6 +618,7 @@ channel.setMethodCallHandler { [weak self] call, result in
           let activeImageAssetData = self.currentActiveImageAssetData
           let imageAssetFormats = self.currentImageAssetFormats
           let activeImageAssetFormats = self.currentActiveImageAssetFormats
+          let originalColors = self.currentOriginalColors
           let appearance: UITabBarAppearance? = {
             if #available(iOS 13.0, *) { return self.makeAppearance() }
             return nil
@@ -655,7 +671,11 @@ channel.setMethodCallHandler { [weak self] call, result in
               }
 
               let title = (i < labels.count && !labels[i].isEmpty) ? labels[i] : nil
-              let item = UITabBarItem(title: title, image: image, selectedImage: selectedImage)
+              let item = UITabBarItem(
+          title: title,
+          image: Self.applyOriginalColors(image, originalColors, i, size: imgSize),
+          selectedImage: Self.applyOriginalColors(selectedImage, originalColors, i, size: imgSize)
+        )
               if i < badges.count && !badges[i].isEmpty {
                 item.badgeValue = badges[i]
               }
@@ -1119,6 +1139,24 @@ channel.setMethodCallHandler { [weak self] call, result in
 
   private static func loadFlutterAsset(_ assetPath: String, size: CGSize? = nil) -> UIImage? {
     return ImageUtils.loadFlutterAsset(assetPath, size: size)
+  }
+
+  /// For items flagged `originalColors` (e.g. an avatar photo): draw the image
+  /// at the item's size (raster data is otherwise shown at its pixel size)
+  /// and keep its own colours instead of the tab bar's template tint.
+  private static func applyOriginalColors(_ image: UIImage?, _ flags: [Bool], _ index: Int, size: CGSize?) -> UIImage? {
+    guard let image = image, index < flags.count, flags[index] else { return image }
+    var result = image
+    if let size = size, size.width > 0, size.height > 0, image.size != size {
+      // Aspect-fill into the target square, centred.
+      let scale = max(size.width / image.size.width, size.height / image.size.height)
+      let drawn = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+      let origin = CGPoint(x: (size.width - drawn.width) / 2, y: (size.height - drawn.height) / 2)
+      result = UIGraphicsImageRenderer(size: size).image { _ in
+        image.draw(in: CGRect(origin: origin, size: drawn))
+      }
+    }
+    return result.withRenderingMode(.alwaysOriginal)
   }
 
   private static func createImageFromData(_ data: Data, format: String?, scale: CGFloat, size: CGSize? = nil) -> UIImage? {
