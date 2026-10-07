@@ -22,6 +22,7 @@ class CNNavigationBarItem {
     this.onPressed,
     this.enabled = true,
     this.color,
+    this.labelSize,
   }) : assert(icon != null || label != null);
 
   /// Stable identity of the item. When two consecutive configurations share
@@ -47,6 +48,9 @@ class CNNavigationBarItem {
   /// dark "Next" on a light tint. Falls back to [icon]'s colour when null.
   final Color? color;
 
+  /// Font size of [label]; 17 when null.
+  final double? labelSize;
+
   Color? get _effectiveColor => color ?? icon?.color;
 }
 
@@ -57,7 +61,12 @@ class CNNavigationBarItem {
 /// A group that disappears melts into its neighbour, a new one splits off.
 class CNNavigationBarGroup {
   /// Creates a glass capsule containing [items].
-  const CNNavigationBarGroup({this.id, required this.items, this.tint});
+  const CNNavigationBarGroup({
+    this.id,
+    required this.items,
+    this.tint,
+    this.width,
+  });
 
   /// Creates a capsule holding a single icon button.
   CNNavigationBarGroup.icon(
@@ -65,6 +74,7 @@ class CNNavigationBarGroup {
     this.id,
     VoidCallback? onPressed,
     this.tint,
+    this.width,
     bool enabled = true,
     Color? color,
   }) : items = [
@@ -87,6 +97,12 @@ class CNNavigationBarGroup {
   /// Optional glass tint, e.g. a green "compose" button. Icons on a tinted
   /// group default to white.
   final Color? tint;
+
+  /// Fixed capsule width; the height stays 44, so 44 keeps a circle. Labels
+  /// then don't widen the capsule: they sit tight next to the icon and shrink
+  /// to fit (e.g. a back chevron with an unread count). Null sizes the
+  /// capsule to its content.
+  final double? width;
 }
 
 /// A top bar of Liquid Glass buttons that morphs between configurations.
@@ -176,6 +192,7 @@ class _CNNavigationBarState extends State<CNNavigationBar> {
             'id': groupId,
             if (group.tint != null)
               'tint': resolveColorToArgb(group.tint, context),
+            if (group.width != null) 'width': group.width,
             'items': [
               for (var i = 0; i < group.items.length; i++)
                 () {
@@ -196,6 +213,7 @@ class _CNNavigationBarState extends State<CNNavigationBar> {
                         context,
                       ),
                     if (item.label != null) 'label': item.label,
+                    if (item.labelSize != null) 'labelSize': item.labelSize,
                     'enabled': item.enabled && item.onPressed != null,
                   };
                 }(),
@@ -388,46 +406,72 @@ class _FallbackGroup extends StatelessWidget {
     final foreground = tint != null
         ? CupertinoColors.white
         : CupertinoColors.label.resolveFrom(context);
+    final fixedWidth = group.width;
+    final compact = fixedWidth != null;
+
+    Widget content(CNNavigationBarItem item) {
+      final color = item._effectiveColor ?? foreground;
+
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (item.icon != null)
+            Icon(
+              _fallbackIcon(item.icon!.name),
+              size: item.icon!.size + 3,
+              color: color,
+            ),
+          if (item.icon != null && item.label != null)
+            SizedBox(width: compact ? 1 : 6),
+          if (item.label != null)
+            Text(
+              item.label!,
+              maxLines: 1,
+              style: TextStyle(
+                color: color,
+                fontSize: item.labelSize ?? 17,
+                fontWeight: compact ? FontWeight.w600 : FontWeight.w500,
+              ),
+            ),
+        ],
+      );
+    }
+
     return Container(
       height: 44,
-      padding: EdgeInsets.symmetric(horizontal: group.items.length > 1 ? 6 : 0),
+      width: fixedWidth,
+      padding: EdgeInsets.symmetric(
+        horizontal: !compact && group.items.length > 1 ? 6 : 0,
+      ),
       decoration: ShapeDecoration(
         color: background,
         shape: const StadiumBorder(),
       ),
       child: Row(
-        mainAxisSize: MainAxisSize.min,
+        mainAxisSize: compact ? MainAxisSize.max : MainAxisSize.min,
         children: [
           for (final item in group.items)
-            CupertinoButton(
-              padding: EdgeInsets.symmetric(
-                horizontal: item.label != null ? 14 : 0,
-              ),
-              minimumSize: const Size(44, 44),
-              onPressed: item.enabled ? item.onPressed : null,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (item.icon != null)
-                    Icon(
-                      _fallbackIcon(item.icon!.name),
-                      size: item.icon!.size + 3,
-                      color: item._effectiveColor ?? foreground,
-                    ),
-                  if (item.icon != null && item.label != null)
-                    const SizedBox(width: 6),
-                  if (item.label != null)
-                    Text(
-                      item.label!,
-                      style: TextStyle(
-                        color: item._effectiveColor ?? foreground,
-                        fontSize: 17,
-                        fontWeight: FontWeight.w500,
+            compact
+                // Fixed width: items share the capsule and shrink to fit.
+                ? Expanded(
+                    child: CupertinoButton(
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      minimumSize: const Size(0, 44),
+                      onPressed: item.enabled ? item.onPressed : null,
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: content(item),
                       ),
                     ),
-                ],
-              ),
-            ),
+                  )
+                : CupertinoButton(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: item.label != null ? 14 : 0,
+                    ),
+                    minimumSize: const Size(44, 44),
+                    onPressed: item.enabled ? item.onPressed : null,
+                    child: content(item),
+                  ),
         ],
       ),
     );

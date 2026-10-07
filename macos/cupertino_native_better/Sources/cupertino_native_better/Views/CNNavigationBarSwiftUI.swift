@@ -7,6 +7,8 @@ struct CNNavBarItem: Identifiable, Equatable {
   let symbol: String?
   let symbolSize: CGFloat
   let label: String?
+  /// Font size of [label]; 17 unless set.
+  let labelSize: CGFloat
   let color: Color?
   let enabled: Bool
 }
@@ -19,6 +21,9 @@ struct CNNavBarGroup: Identifiable, Equatable {
   let id: String
   let items: [CNNavBarItem]
   let tint: Color?
+  /// Fixed capsule width (height stays 44, so 44 makes a circle). Labels
+  /// then don't widen it: no label padding, a tight icon + text layout.
+  let width: CGFloat?
 }
 
 @available(macOS 26.0, *)
@@ -75,12 +80,14 @@ final class CNNavigationBarModel: ObservableObject {
           symbol: item["symbol"] as? String,
           symbolSize: (item["symbolSize"] as? NSNumber).map { CGFloat(truncating: $0) } ?? 17,
           label: item["label"] as? String,
+          labelSize: (item["labelSize"] as? NSNumber).map { CGFloat(truncating: $0) } ?? 17,
           color: (item["color"] as? NSNumber).map { colorFromARGB($0.intValue) },
           enabled: (item["enabled"] as? NSNumber)?.boolValue ?? true
         )
       }
       let tint = (dict["tint"] as? NSNumber).map { colorFromARGB($0.intValue) }
-      return CNNavBarGroup(id: id, items: items, tint: tint)
+      let width = (dict["width"] as? NSNumber).map { CGFloat(truncating: $0) }
+      return CNNavBarGroup(id: id, items: items, tint: tint, width: width)
     }
   }
 
@@ -155,16 +162,20 @@ struct CNNavigationBarSwiftUI: View {
   @ViewBuilder
   private func glassGroup(_ group: CNNavBarGroup, blur: CGFloat) -> some View {
     let isMulti = group.items.count > 1
+    let fixedWidth = group.width
     let foreground: Color = group.tint != nil ? .white : .primary
     HStack(spacing: 0) {
       ForEach(group.items) { item in
         Button {
           model.onPressed(item.id)
         } label: {
-          itemLabel(item)
+          itemLabel(item, compact: fixedWidth != nil)
             .foregroundStyle(item.color ?? foreground)
-            .frame(minWidth: isMulti ? 36 : 44, minHeight: 44)
-            .padding(.horizontal, item.label != nil ? 14 : 0)
+            .frame(minWidth: fixedWidth == nil ? (isMulti ? 36 : 44) : nil, minHeight: 44)
+            .padding(.horizontal, fixedWidth == nil && item.label != nil ? 14 : 0)
+            // Fixed width: the items share the whole capsule, so the hit
+            // area is the full capsule, not just the glyphs.
+            .frame(maxWidth: fixedWidth == nil ? nil : .infinity)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -177,8 +188,8 @@ struct CNNavigationBarSwiftUI: View {
       }
     }
     .blur(radius: blur)
-    .padding(.horizontal, isMulti ? 6 : 0)
-    .frame(height: 44)
+    .padding(.horizontal, isMulti && fixedWidth == nil ? 6 : 0)
+    .frame(width: fixedWidth, height: 44)
     .glassEffect(
       group.tint.map { Glass.regular.tint($0).interactive() } ?? Glass.regular.interactive(),
       in: .capsule
@@ -187,16 +198,33 @@ struct CNNavigationBarSwiftUI: View {
   }
 
   @ViewBuilder
-  private func itemLabel(_ item: CNNavBarItem) -> some View {
-    if let symbol = item.symbol, let label = item.label {
-      Label(label, systemImage: symbol)
-        .font(.system(size: item.symbolSize, weight: .medium))
+  private func itemLabel(_ item: CNNavBarItem, compact: Bool) -> some View {
+    if let symbol = item.symbol, let label = item.label, compact {
+      // Fixed-width capsule (e.g. back + unread count in a 44pt circle):
+      // Label's icon/title gap is too wide, and "99+" shrinks rather than clips.
+      HStack(spacing: 1) {
+        Image(systemName: symbol)
+          .font(.system(size: item.symbolSize, weight: .medium))
+        Text(label)
+          .font(.system(size: item.labelSize, weight: .semibold))
+          .lineLimit(1)
+          .minimumScaleFactor(0.6)
+      }
+      .padding(.horizontal, 4)
+    } else if let symbol = item.symbol, let label = item.label {
+      Label {
+        Text(label).font(.system(size: item.labelSize, weight: .medium))
+      } icon: {
+        Image(systemName: symbol).font(.system(size: item.symbolSize, weight: .medium))
+      }
     } else if let symbol = item.symbol {
       Image(systemName: symbol)
         .font(.system(size: item.symbolSize, weight: .medium))
     } else {
       Text(item.label ?? "")
-        .font(.system(size: 17, weight: .medium))
+        .font(.system(size: item.labelSize, weight: .medium))
+        .lineLimit(1)
+        .minimumScaleFactor(compact ? 0.6 : 1)
     }
   }
 }
