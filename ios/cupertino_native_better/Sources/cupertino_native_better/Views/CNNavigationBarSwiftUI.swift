@@ -28,8 +28,8 @@ struct CNNavBarGroup: Identifiable, Equatable {
 
 @available(iOS 26.0, *)
 final class CNNavigationBarModel: ObservableObject {
-  @Published var leading: [CNNavBarGroup] = []
-  @Published var trailing: [CNNavBarGroup] = []
+  @Published var leading: [CNNavBarGroup] = [] { didSet { pruneFrames() } }
+  @Published var trailing: [CNNavBarGroup] = [] { didSet { pruneFrames() } }
   /// Per-group counter; bumping it plays that group's glass pulse.
   @Published var pulses: [String: Int] = [:]
   var horizontalPadding: CGFloat = 16
@@ -42,8 +42,25 @@ final class CNNavigationBarModel: ObservableObject {
   private var frames: [String: CGRect] = [:]
   private var framesFlushScheduled = false
 
-  func setFrame(_ rect: CGRect?, for id: String) {
-    if let rect = rect { frames[id] = rect } else { frames.removeValue(forKey: id) }
+  func setFrame(_ rect: CGRect, for id: String) {
+    frames[id] = rect
+    scheduleFramesFlush()
+  }
+
+  /// Frames are dropped only when their group leaves the bar — not when the
+  /// view merely goes off screen (e.g. a full-screen modal presented over the
+  /// Flutter view): the geometry doesn't change when it comes back, so a frame
+  /// removed then would never be re-reported and the button would stop
+  /// taking touches.
+  private func pruneFrames() {
+    let ids = Set((leading + trailing).map(\.id))
+    let stale = frames.keys.filter { !ids.contains($0) }
+    guard !stale.isEmpty else { return }
+    stale.forEach { frames.removeValue(forKey: $0) }
+    scheduleFramesFlush()
+  }
+
+  private func scheduleFramesFlush() {
     guard !framesFlushScheduled else { return }
     framesFlushScheduled = true
     DispatchQueue.main.async { [weak self] in
@@ -156,7 +173,6 @@ struct CNNavigationBarSwiftUI: View {
     } action: { rect in
       model.setFrame(rect, for: group.id)
     }
-    .onDisappear { model.setFrame(nil, for: group.id) }
   }
 
   @ViewBuilder
