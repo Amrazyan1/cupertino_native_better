@@ -28,11 +28,22 @@ struct GlassButtonSwiftUI: View {
   /// own `Button(action:)` for per-button hit-testing.
   var applyOwnGlass: Bool = true
 
+  /// `CNButtonConfig.labelColor`: colours the title instead of [tint].
+  var labelColor: Color? = nil
+
   /// Computes the effective icon color. An explicit per-icon color wins over
   /// the control tint; when neither is provided the system/glass default
   /// (automatic adaptive foreground) applies.
   private var effectiveIconColor: Color? {
+    if isProminentTinted { return iconColor ?? labelColor ?? .white }
     return iconColor ?? tint
+  }
+
+  /// Filled styles with a tint: the tint colours the glass itself (as the
+  /// UIKit `.prominentGlass()` / `.filled()` path does), so content defaults
+  /// to white instead of the tint.
+  private var isProminentTinted: Bool {
+    tint != nil && ["prominentGlass", "filled", "borderedProminent"].contains(style)
   }
 
   var body: some View {
@@ -53,7 +64,7 @@ struct GlassButtonSwiftUI: View {
 
         if let title = title {
           Text(title)
-            .foregroundColor(tint != nil ? Color(tint!) : nil)
+            .foregroundColor(labelColor ?? (isProminentTinted ? .white : tint))
         }
       }
       .padding(config.padding)
@@ -84,8 +95,10 @@ struct GlassButtonSwiftUI: View {
   }
   
   private func glassEffectForStyle(_ style: String, interactive: Bool) -> Glass {
-    // Always use .regular for now - prominent glass API may be available in future
     var glass = Glass.regular
+    if isProminentTinted, let tint = tint {
+      glass = glass.tint(tint)
+    }
     
     // Make glass interactive if requested
     if interactive {

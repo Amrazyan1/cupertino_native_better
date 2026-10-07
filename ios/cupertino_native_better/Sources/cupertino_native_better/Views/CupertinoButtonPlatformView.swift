@@ -780,6 +780,7 @@ class CupertinoButtonPlatformView: NSObject, FlutterPlatformView {
       let glassEffectInteractive: Bool
       let config: GlassButtonConfig
       let badgeCount: Int?
+      let labelColor: Color?
 
       var body: some View {
         GlassButtonSwiftUI(
@@ -799,7 +800,8 @@ class CupertinoButtonPlatformView: NSObject, FlutterPlatformView {
           glassEffectInteractive: glassEffectInteractive,
           namespace: namespace,
           config: config,
-          badgeCount: badgeCount
+          badgeCount: badgeCount,
+          labelColor: labelColor
         )
       }
     }
@@ -822,7 +824,8 @@ class CupertinoButtonPlatformView: NSObject, FlutterPlatformView {
       glassEffectId: glassEffectId,
       glassEffectInteractive: glassEffectInteractive,
       config: config,
-      badgeCount: badgeCount
+      badgeCount: badgeCount,
+      labelColor: self.labelColor.map { Color($0) }
     )
     
     let hostingController = UIHostingController(rootView: AnyView(swiftUIButton))
@@ -870,10 +873,11 @@ class CupertinoButtonPlatformView: NSObject, FlutterPlatformView {
     guard let button = self.button, !usesSwiftUI else { return }
     
     if #available(iOS 15.0, *) {
-      // Preserve current content while swapping configurations
-      let currentTitle = button.configuration?.title
-      let currentImage = button.configuration?.image
-      let currentSymbolCfg = button.configuration?.preferredSymbolConfigurationForImage
+      // Preserve current content and layout while swapping configurations
+      let previous = button.configuration
+      let currentTitle = previous?.title
+      let currentImage = previous?.image
+      let currentSymbolCfg = previous?.preferredSymbolConfigurationForImage
       var config: UIButton.Configuration
       switch buttonStyle {
       case "plain": config = .plain()
@@ -902,8 +906,12 @@ class CupertinoButtonPlatformView: NSObject, FlutterPlatformView {
       if let tint = button.tintColor {
         switch buttonStyle {
         case "filled", "borderedProminent", "prominentGlass":
-          // Treat prominentGlass like filled: color the background and let system pick readable foreground
+          // Treat prominentGlass like filled: color the background and let system pick readable
+          // foreground — unless a label colour is set (e.g. dark text on a light tint).
           config.baseBackgroundColor = tint
+          if let labelColor = self.labelColor {
+            config.baseForegroundColor = labelColor
+          }
         case "tinted", "bordered", "gray", "plain", "glass":
           // Foreground-only tint
           config.baseForegroundColor = tint
@@ -915,6 +923,15 @@ class CupertinoButtonPlatformView: NSObject, FlutterPlatformView {
       config.title = currentTitle
       config.image = currentImage
       config.preferredSymbolConfigurationForImage = currentSymbolCfg
+      // ...and what setButtonContent set: without these a style / tint update
+      // dropped labelColor / labelFontSize / labelFontWeight and the layout.
+      config.titleTextAttributesTransformer = makeTitleTextAttributesTransformer()
+      config.titleLineBreakMode = .byTruncatingTail
+      if let previous = previous {
+        config.imagePlacement = previous.imagePlacement
+        config.imagePadding = previous.imagePadding
+        config.contentInsets = previous.contentInsets
+      }
       button.configuration = config
     } else {
       button.layer.cornerRadius = round ? 999 : 8
