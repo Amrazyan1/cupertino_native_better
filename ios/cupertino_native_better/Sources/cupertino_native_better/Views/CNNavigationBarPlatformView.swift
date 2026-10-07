@@ -8,6 +8,13 @@ class CNNavigationBarPlatformView: NSObject, FlutterPlatformView {
   private let hostingController: UIHostingController<CNNavigationBarSwiftUI>
   private let channel: FlutterMethodChannel
   private let model = CNNavigationBarModel()
+  private var activeObserver: NSObjectProtocol?
+
+  deinit {
+    if let observer = activeObserver {
+      NotificationCenter.default.removeObserver(observer)
+    }
+  }
 
   init(frame: CGRect, viewId: Int64, args: Any?, messenger: FlutterBinaryMessenger) {
     self.channel = FlutterMethodChannel(name: "CNNavigationBar_\(viewId)", binaryMessenger: messenger)
@@ -45,9 +52,18 @@ class CNNavigationBarPlatformView: NSObject, FlutterPlatformView {
     model.onPressed = { [weak self] id in
       self?.channel.invokeMethod("itemPressed", arguments: ["id": id])
     }
-    model.onFramesChanged = { [weak self] rects in
-      let list = rects.map { ["x": $0.minX, "y": $0.minY, "w": $0.width, "h": $0.height] }
+    model.onFramesChanged = { [weak self] frames in
+      let list: [[String: Any]] = frames.map {
+        ["id": $0.id, "x": $0.rect.minX, "y": $0.rect.minY, "w": $0.rect.width, "h": $0.rect.height]
+      }
       self?.channel.invokeMethod("framesChanged", arguments: ["frames": list])
+    }
+    // Returning to the foreground: re-report, in case a lifecycle change
+    // (modal, backgrounding) left Flutter with stale hit regions.
+    activeObserver = NotificationCenter.default.addObserver(
+      forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main
+    ) { [weak self] _ in
+      self?.model.reportFrames()
     }
 
     channel.setMethodCallHandler { [weak self] call, result in
@@ -68,6 +84,9 @@ class CNNavigationBarPlatformView: NSObject, FlutterPlatformView {
           self.model.leading = leading
           self.model.trailing = trailing
         }
+        result(nil)
+      case "requestFrames":
+        self.model.reportFrames()
         result(nil)
       case "setBrightness":
         let isDark = ((call.arguments as? [String: Any])?["isDark"] as? NSNumber)?.boolValue ?? false

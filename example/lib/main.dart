@@ -2,6 +2,7 @@ import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart' show DefaultMaterialLocalizations;
 import 'demos/navigation_bar.dart';
+import 'demos/navigation_bar_hit_test.dart';
 import 'demos/slider.dart';
 import 'demos/switch.dart';
 import 'demos/segmented_control.dart';
@@ -273,6 +274,16 @@ class HomePage extends StatelessWidget {
           CupertinoListSection.insetGrouped(
             header: Text('Testing'),
             children: [
+              CupertinoListTile(
+                title: Text('Navigation bar hit testing'),
+                leading: CNIcon(symbol: CNSymbol('hand.tap', color: accentColor)),
+                trailing: CupertinoListTileChevron(),
+                onTap: () {
+                  Navigator.of(
+                    context,
+                  ).push(CupertinoPageRoute(builder: (_) => const NavigationBarHitTestPage()));
+                },
+              ),
               CupertinoListTile(
                 title: Text('#2: Modal bottom sheet shadow'),
                 leading: CNIcon(

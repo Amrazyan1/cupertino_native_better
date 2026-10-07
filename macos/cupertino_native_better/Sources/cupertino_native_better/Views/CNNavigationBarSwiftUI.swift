@@ -28,17 +28,26 @@ struct CNNavBarGroup: Identifiable, Equatable {
 
 @available(macOS 26.0, *)
 final class CNNavigationBarModel: ObservableObject {
-  @Published var leading: [CNNavBarGroup] = [] { didSet { pruneFrames() } }
-  @Published var trailing: [CNNavBarGroup] = [] { didSet { pruneFrames() } }
+  @Published var leading: [CNNavBarGroup] = [] { didSet { scheduleFramesFlush() } }
+  @Published var trailing: [CNNavBarGroup] = [] { didSet { scheduleFramesFlush() } }
   /// Per-group counter; bumping it plays that group's glass pulse.
   @Published var pulses: [String: Int] = [:]
   var horizontalPadding: CGFloat = 16
   var groupSpacing: CGFloat = 10
   var onPressed: (String) -> Void = { _ in }
-  /// Receives the frames of all groups (bar coordinates) whenever they change,
+  /// Receives the frame of every group currently in the bar (bar
+  /// coordinates, keyed by group id) whenever they change or are requested,
   /// so Flutter can let touches outside the buttons through.
-  var onFramesChanged: ([CGRect]) -> Void = { _ in }
+  var onFramesChanged: ([(id: String, rect: CGRect)]) -> Void = { _ in }
 
+  /// Last frame reported by every group id, kept after the group leaves the
+  /// bar. Only the frames of the groups currently in the bar are sent, but a
+  /// frame is never forgotten: `onGeometryChange` fires only when geometry
+  /// changes, and a group can come back without it changing — after a
+  /// full-screen modal took the view off-window, or when it is re-added while
+  /// its removal is still animating (a page without buttons pushed and popped
+  /// at once). A frame dropped then would never be re-reported and the
+  /// button would stop taking touches.
   private var frames: [String: CGRect] = [:]
   private var framesFlushScheduled = false
 
@@ -47,16 +56,9 @@ final class CNNavigationBarModel: ObservableObject {
     scheduleFramesFlush()
   }
 
-  /// Frames are dropped only when their group leaves the bar — not when the
-  /// view merely goes off screen (e.g. a full-screen modal presented over the
-  /// Flutter view): the geometry doesn't change when it comes back, so a frame
-  /// removed then would never be re-reported and the button would stop
-  /// taking touches.
-  private func pruneFrames() {
-    let ids = Set((leading + trailing).map(\.id))
-    let stale = frames.keys.filter { !ids.contains($0) }
-    guard !stale.isEmpty else { return }
-    stale.forEach { frames.removeValue(forKey: $0) }
+  /// Re-sends the current frames (Flutter asks after navigation and on app
+  /// resume, so a missed update repairs itself).
+  func reportFrames() {
     scheduleFramesFlush()
   }
 
@@ -66,7 +68,11 @@ final class CNNavigationBarModel: ObservableObject {
     DispatchQueue.main.async { [weak self] in
       guard let self = self else { return }
       self.framesFlushScheduled = false
-      self.onFramesChanged(Array(self.frames.values))
+      self.onFramesChanged(
+        (self.leading + self.trailing).compactMap { group in
+          self.frames[group.id].map { (id: group.id, rect: $0) }
+        }
+      )
     }
   }
 

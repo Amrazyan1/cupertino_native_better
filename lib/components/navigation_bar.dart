@@ -156,7 +156,8 @@ class CNNavigationBar extends StatefulWidget {
   State<CNNavigationBar> createState() => _CNNavigationBarState();
 }
 
-class _CNNavigationBarState extends State<CNNavigationBar> {
+class _CNNavigationBarState extends State<CNNavigationBar>
+    with WidgetsBindingObserver {
   MethodChannel? _channel;
   String? _lastSignature;
   Object? _lastPageKey;
@@ -164,8 +165,9 @@ class _CNNavigationBarState extends State<CNNavigationBar> {
   Map<String, Object?> _lastItems = const {};
   Map<String, VoidCallback> _callbacks = const {};
 
-  /// Button frames reported by the native bar; null until the first report.
-  List<Rect>? _hitRects;
+  /// Frame of each glass group (bar coordinates, keyed by group id) as last
+  /// reported by the native bar; null until the first report.
+  Map<String, Rect>? _hitFrames;
 
   bool get _useNative =>
       (defaultTargetPlatform == TargetPlatform.iOS ||
@@ -173,9 +175,40 @@ class _CNNavigationBarState extends State<CNNavigationBar> {
       PlatformVersion.shouldUseNativeGlass;
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _channel?.setMethodCallHandler(null);
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Back from the background or a system sheet: make sure the hit regions
+    // match what is on screen.
+    if (state == AppLifecycleState.resumed) _requestFrames();
+  }
+
+  void _requestFrames() {
+    _channel?.invokeMethod('requestFrames').catchError((_) {});
+  }
+
+  /// Hit regions for the groups in [groupIds]. Falls back to the whole bar
+  /// (null) while any visible group has no known frame, so a missed native
+  /// report costs at most a moment of untappable title — never dead buttons.
+  List<Rect>? _hitRectsFor(List<String> groupIds) {
+    if (groupIds.isEmpty) return const [];
+    final frames = _hitFrames;
+    if (frames == null || groupIds.any((id) => !frames.containsKey(id))) {
+      return null;
+    }
+
+    return [for (final id in groupIds) frames[id]!];
   }
 
   List<Map<String, Object?>> _serialize(
@@ -232,16 +265,16 @@ class _CNNavigationBarState extends State<CNNavigationBar> {
         if (itemId != null) _callbacks[itemId]?.call();
       } else if (call.method == 'framesChanged') {
         final frames = (call.arguments as Map?)?['frames'] as List? ?? const [];
-        final rects = [
+        final byId = {
           for (final f in frames.cast<Map>())
-            Rect.fromLTWH(
+            f['id'] as String: Rect.fromLTWH(
               (f['x'] as num).toDouble(),
               (f['y'] as num).toDouble(),
               (f['w'] as num).toDouble(),
               (f['h'] as num).toDouble(),
             ),
-        ];
-        if (mounted) setState(() => _hitRects = rects);
+        };
+        if (mounted) setState(() => _hitFrames = byId);
       }
     });
     // Items may have changed between the first build (creation params) and
@@ -273,6 +306,8 @@ class _CNNavigationBarState extends State<CNNavigationBar> {
           'animated': true,
           'pulseAll': pageChanged,
         });
+        // New screen: re-sync the hit regions even if no geometry changed.
+        if (pageChanged) _requestFrames();
       }
       if (isDark != _lastIsDark) {
         channel.invokeMethod('setBrightness', {'isDark': isDark});
@@ -294,10 +329,11 @@ class _CNNavigationBarState extends State<CNNavigationBar> {
     const viewType = 'CNNavigationBar';
     // Only the glass groups take touches; the rest of the bar lets them
     // through to whatever is underneath (e.g. a tappable page title).
-    // No groups: nothing to tap, let every touch through.
-    final isEmpty = widget.leading.isEmpty && widget.trailing.isEmpty;
+    final groupIds = [
+      for (final group in [...leading, ...trailing]) group['id']! as String,
+    ];
     return _CNHitRegions(
-      rects: isEmpty ? const [] : _hitRects,
+      rects: _hitRectsFor(groupIds),
       child: SizedBox(
         height: widget.height,
         width: double.infinity,
