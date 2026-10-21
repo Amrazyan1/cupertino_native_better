@@ -969,99 +969,23 @@ channel.setMethodCallHandler { [weak self] call, result in
           result(nil)
         } else { result(FlutterError(code: "bad_args", message: "Missing font args", details: nil)) }
       case "refresh":
-        // Force refresh for label rendering on iOS < 16.
-        // UITabBar only fully layouts labels when items are selected,
-        // so we temporarily select each item to force layout. The
-        // entire cycle is wrapped in `UIView.setAnimationsEnabled(false)`
-        // so the iOS 26 Liquid Glass selection pill doesn't morph
-        // visibly through every tab on launch (Issue #35).
+        // Force label layout (Issue #6: sporadic missing labels with 5
+        // items). UITabBar only fully lays out an item's label once it has
+        // been selected, so select each item in turn, then restore the
+        // original. The whole cycle runs in ONE run-loop turn inside a
+        // single CATransaction with actions disabled, so the intermediate
+        // selections are never committed to the screen — no visible sweep
+        // through the tabs on launch (Issue #35).
         if let bar = self.tabBar, let items = bar.items, !items.isEmpty {
-          let originalSelected = bar.selectedItem
-          // Temporarily remove delegate to prevent callbacks during refresh
-          bar.delegate = nil
-          DispatchQueue.main.async { [weak self, weak bar, weak originalSelected] in
-            guard let self = self, let bar = bar, let items = bar.items, !items.isEmpty else { return }
-            UIView.setAnimationsEnabled(false)
-            // Cycle through each item to force label layout
-            var index = 0
-            func selectNext() {
-              guard index < items.count else {
-                // Restore original selection
-                if let original = originalSelected {
-                  bar.selectedItem = original
-                } else {
-                  bar.selectedItem = items.first
-                }
-                bar.setNeedsLayout()
-                bar.layoutIfNeeded()
-                // Restore delegate + animations
-                bar.delegate = self
-                UIView.setAnimationsEnabled(true)
-                return
-              }
-              bar.selectedItem = items[index]
-              bar.setNeedsLayout()
-              bar.layoutIfNeeded()
-              index += 1
-              DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) {
-                selectNext()
-              }
-            }
-            selectNext()
+          DispatchQueue.main.async { [weak self, weak bar] in
+            guard let self = self, let bar = bar else { return }
+            self.cycleSelectionWithoutRendering([(bar, bar.selectedItem ?? bar.items?.first)])
           }
         } else if let left = self.tabBarLeft, let right = self.tabBarRight {
-          let leftOriginal = left.selectedItem
-          let rightOriginal = right.selectedItem
-          // Temporarily remove delegates to prevent callbacks during refresh
-          left.delegate = nil
-          right.delegate = nil
-          DispatchQueue.main.async { [weak self, weak left, weak right, weak leftOriginal, weak rightOriginal] in
-            guard let self = self, let left = left, let right = right,
-                  let leftItems = left.items, let rightItems = right.items else { return }
-            UIView.setAnimationsEnabled(false)
-            // Process left items
-            var leftIndex = 0
-            func selectNextLeft() {
-              if leftIndex < leftItems.count {
-                left.selectedItem = leftItems[leftIndex]
-                left.setNeedsLayout()
-                left.layoutIfNeeded()
-                leftIndex += 1
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) {
-                  selectNextLeft()
-                }
-              } else {
-                // Restore original selection (nil means no selection on this bar)
-                left.selectedItem = leftOriginal
-                left.setNeedsLayout()
-                left.layoutIfNeeded()
-
-                // Process right items
-                var rightIndex = 0
-                func selectNextRight() {
-                  if rightIndex < rightItems.count {
-                    right.selectedItem = rightItems[rightIndex]
-                    right.setNeedsLayout()
-                    right.layoutIfNeeded()
-                    rightIndex += 1
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) {
-                      selectNextRight()
-                    }
-                  } else {
-                    // Restore original selection (nil means no selection on this bar)
-                    right.selectedItem = rightOriginal
-                    right.setNeedsLayout()
-                    right.layoutIfNeeded()
-                    // Restore delegates + animations
-                    left.delegate = self
-                    right.delegate = self
-                    UIView.setAnimationsEnabled(true)
-                  }
-                }
-                selectNextRight()
-              }
-            }
-            selectNextLeft()
+          DispatchQueue.main.async { [weak self, weak left, weak right] in
+            guard let self = self, let left = left, let right = right else { return }
+            // nil restores "no selection" on that half of the split bar.
+            self.cycleSelectionWithoutRendering([(left, left.selectedItem), (right, right.selectedItem)])
           }
         }
         result(nil)
@@ -1082,6 +1006,31 @@ channel.setMethodCallHandler { [weak self] call, result in
   }
 
   func view() -> UIView { container }
+
+  /// Selects every item of each bar in turn to force label layout, then
+  /// restores the given selection. Runs synchronously inside one
+  /// CATransaction with actions disabled, so nothing between the first and
+  /// last selection is rendered. Delegates are detached for the duration so
+  /// no selection callback reaches Flutter.
+  private func cycleSelectionWithoutRendering(_ bars: [(UITabBar, UITabBarItem?)]) {
+    UIView.performWithoutAnimation {
+      CATransaction.begin()
+      CATransaction.setDisableActions(true)
+      for (bar, restore) in bars {
+        bar.delegate = nil
+        for item in bar.items ?? [] {
+          bar.selectedItem = item
+          bar.setNeedsLayout()
+          bar.layoutIfNeeded()
+        }
+        bar.selectedItem = restore
+        bar.setNeedsLayout()
+        bar.layoutIfNeeded()
+        bar.delegate = self
+      }
+      CATransaction.commit()
+    }
+  }
 
   // MARK: - Appearance helpers
 
