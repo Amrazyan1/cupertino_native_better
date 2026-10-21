@@ -7,6 +7,7 @@ import '../channel/params.dart';
 import '../style/sf_symbol.dart';
 import '../style/tab_bar_search_item.dart';
 import '../utils/icon_renderer.dart';
+import '../utils/orphaned_pointer_canceller.dart';
 import '../utils/platform_view_guard.dart';
 import '../utils/version_detector.dart';
 import '../utils/theme_helper.dart';
@@ -319,6 +320,12 @@ class _CNTabBarState extends State<CNTabBar> {
   bool _pageTransitioning = false;
   Animation<double>? _secondaryRouteAnim;
 
+  // iOS 26: a touch on the bar's rect that straddles the end of a push over
+  // this route is orphaned when the engine removes the platform view, and
+  // its recognizers stay stuck. Only possible while the platform view is
+  // painted through the transition (autoHideOnPageTransition: false).
+  OrphanedPointerCanceller? _orphanedPointerCanceller;
+
   bool get _isDark => ThemeHelper.isDark(context);
   Color? get _effectiveTint =>
       widget.tint ?? ThemeHelper.getPrimaryColor(context);
@@ -344,6 +351,11 @@ class _CNTabBarState extends State<CNTabBar> {
     if (!PlatformViewGuard.isReady) {
       PlatformViewGuard.ensureScheduled();
       PlatformViewGuard.readyNotifier.addListener(_onPlatformViewGuardReady);
+    }
+    if (defaultTargetPlatform == TargetPlatform.iOS) {
+      _orphanedPointerCanceller = OrphanedPointerCanceller(
+        globalRect: _nativeBarGlobalRect,
+      );
     }
     if (widget.autoHideOnModal) {
       // Split-search variant (iOS 26+) uses an UNCLIPPED native container
@@ -384,6 +396,21 @@ class _CNTabBarState extends State<CNTabBar> {
     }
   }
 
+  /// Global rect of the native bar, or null while no platform view exists.
+  Rect? _nativeBarGlobalRect() {
+    if (!mounted || _channel == null) return null;
+    final ro = context.findRenderObject();
+    if (ro is! RenderBox || !ro.hasSize || !ro.attached) return null;
+    return ro.localToGlobal(Offset.zero) & ro.size;
+  }
+
+  void _attachOrphanedPointerCanceller() {
+    _orphanedPointerCanceller?.coveringAnimation =
+        widget.autoHideOnPageTransition
+        ? null
+        : ModalRoute.of(context)?.secondaryAnimation;
+  }
+
   void _attachSecondaryRouteAnim() {
     if (!widget.autoHideOnPageTransition) return;
     final route = ModalRoute.of(context);
@@ -417,6 +444,7 @@ class _CNTabBarState extends State<CNTabBar> {
           _pageTransitioning = false;
         }
       }
+      _attachOrphanedPointerCanceller();
     }
     _syncPropsToNativeIfNeeded();
   }
@@ -434,6 +462,8 @@ class _CNTabBarState extends State<CNTabBar> {
     CNTabBarRouteObserver.anyModalDepth.removeListener(_onModalDepthChanged);
     _secondaryRouteAnim?.removeListener(_onSecondaryRouteAnimChanged);
     _secondaryRouteAnim = null;
+    _orphanedPointerCanceller?.dispose();
+    _orphanedPointerCanceller = null;
     _searchFocusNode?.dispose();
     _channel?.setMethodCallHandler(null);
     _channel = null;
@@ -1134,6 +1164,7 @@ class _CNTabBarState extends State<CNTabBar> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     _attachSecondaryRouteAnim();
+    _attachOrphanedPointerCanceller();
     _syncBrightnessIfNeeded();
     _syncPropsToNativeIfNeeded();
   }
