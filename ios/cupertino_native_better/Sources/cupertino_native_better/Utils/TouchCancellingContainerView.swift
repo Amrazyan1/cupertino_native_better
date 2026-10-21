@@ -20,6 +20,14 @@ import UIKit
 class CNTouchCancellingContainerView: UIView {
   override func willMove(toWindow newWindow: UIWindow?) {
     super.willMove(toWindow: newWindow)
+    // TEMP diagnostics (lost touch-up investigation): log every window
+    // transition and what the interceptor's recognizers are tracking.
+    let recognizers = (superview?.gestureRecognizers ?? []).map {
+      "\(type(of: $0))(state=\($0.state.rawValue) touches=\($0.numberOfTouches) enabled=\($0.isEnabled))"
+    }
+    NSLog(
+      "[CN TouchCancel] willMove(toWindow: \(newWindow == nil ? "nil" : "window")) superview=\(superview.map { String(describing: type(of: $0)) } ?? "nil") recognizers=\(recognizers)"
+    )
     guard newWindow == nil else { return }
     for recognizer in superview?.gestureRecognizers ?? [] {
       guard recognizer.isEnabled, recognizer.numberOfTouches > 0 else { continue }
