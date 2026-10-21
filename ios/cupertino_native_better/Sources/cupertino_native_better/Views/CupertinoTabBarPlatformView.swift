@@ -35,7 +35,7 @@ class CupertinoTabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelega
 
   init(frame: CGRect, viewId: Int64, args: Any?, messenger: FlutterBinaryMessenger) {
     self.channel = FlutterMethodChannel(name: "CupertinoNativeTabBar_\(viewId)", binaryMessenger: messenger)
-    self.container = CNTouchCancellingContainerView(frame: frame)
+    self.container = UIView(frame: frame)
 
     var labels: [String] = []
     var symbols: [String] = []
