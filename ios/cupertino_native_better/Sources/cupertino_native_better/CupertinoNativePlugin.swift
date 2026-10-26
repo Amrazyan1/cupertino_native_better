@@ -15,6 +15,9 @@ public class CupertinoNativePlugin: NSObject, FlutterPlugin {
     // Setup the native tab bar (iOS 26: search + minimize + accessory + native lists)
     CNNativeTabBarManager.shared.setup(messenger: registrar.messenger())
 
+    // Vertical bar edge and reserved regions (iPhone Duo), on request from Dart
+    CNDisplayLayoutObserver.register(with: registrar)
+
     // Register platform view factories
     let sliderFactory = CupertinoSliderViewFactory(messenger: registrar.messenger())
     registrar.register(sliderFactory, withId: "CupertinoNativeSlider")

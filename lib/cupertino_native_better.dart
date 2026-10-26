@@ -89,6 +89,7 @@ export 'style/tab_bar_search_item.dart';
 export 'utils/platform_view_guard.dart';
 export 'utils/version_detector.dart';
 export 'utils/theme_helper.dart';
+export 'utils/display_layout.dart';
 
 import 'cupertino_native_platform_interface.dart';
 

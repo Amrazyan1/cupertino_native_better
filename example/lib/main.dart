@@ -1,6 +1,7 @@
 import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart' show DefaultMaterialLocalizations;
+import 'demos/display_layout.dart';
 import 'demos/navigation_bar.dart';
 import 'demos/navigation_bar_hit_test.dart';
 import 'demos/slider.dart';
@@ -182,6 +183,16 @@ class HomePage extends StatelessWidget {
                   Navigator.of(
                     context,
                   ).push(CupertinoPageRoute(builder: (_) => const NavigationBarDemoPage()));
+                },
+              ),
+              CupertinoListTile(
+                title: Text('Display layout (iPhone Duo)'),
+                leading: CNIcon(symbol: CNSymbol('rectangle.split.2x1', color: accentColor)),
+                trailing: CupertinoListTileChevron(),
+                onTap: () {
+                  Navigator.of(
+                    context,
+                  ).push(CupertinoPageRoute(builder: (_) => const DisplayLayoutDemoPage()));
                 },
               ),
               CupertinoListTile(

@@ -12,7 +12,7 @@ class CupertinoIconPlatformView: NSObject, FlutterPlatformView {
   private var assetPath: String?
   private var imageData: Data?
   private var imageFormat: String?
-  private var iconScale: CGFloat = UIScreen.main.scale
+  private var iconScale: CGFloat = ImageUtils.displayScale
   private var isDark: Bool = false
   private var size: CGFloat?
   private var color: UIColor?

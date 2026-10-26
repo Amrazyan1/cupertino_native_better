@@ -173,7 +173,7 @@ extension ImageCacheManager {
         size: CGSize? = nil,
         color: Int? = nil,
         format: String? = nil,
-        scale: CGFloat = UIScreen.main.scale
+        scale: CGFloat = ImageUtils.displayScale
     ) -> UIImage? {
         // Generate cache key
         let key = cacheKey(for: assetPath, size: size, color: color)
@@ -213,7 +213,7 @@ extension ImageCacheManager {
         size: CGSize? = nil,
         color: Int? = nil,
         format: String? = nil,
-        scale: CGFloat = UIScreen.main.scale
+        scale: CGFloat = ImageUtils.displayScale
     ) -> UIImage? {
         // Generate cache key
         let key = cacheKey(for: data, size: size, color: color)

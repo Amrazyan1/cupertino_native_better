@@ -4,7 +4,24 @@ import SVGKit
 
 /// Shared utility functions for image loading, color conversion, and image processing
 final class ImageUtils {
-  
+
+  // MARK: - Display Scale
+
+  /// Scale of the display the app is currently showing on.
+  ///
+  /// Use instead of `ImageUtils.displayScale`: on devices with more than one
+  /// display (iPhone Duo) the main screen is ambiguous and is being deprecated,
+  /// so the scale is read from the foreground window scene instead.
+  static var displayScale: CGFloat {
+    let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+    let scene = scenes.first { $0.activationState == .foregroundActive } ?? scenes.first
+    if let scale = scene?.traitCollection.displayScale, scale > 0 {
+      return scale
+    }
+    let current = UITraitCollection.current.displayScale
+    return current > 0 ? current : 2.0
+  }
+
   // MARK: - Color Conversion
   
   /// Converts ARGB integer to UIColor
@@ -104,7 +121,7 @@ final class ImageUtils {
     size: CGSize? = nil,
     format: String? = nil,
     color: UIColor? = nil,
-    scale: CGFloat = UIScreen.main.scale
+    scale: CGFloat = ImageUtils.displayScale
   ) -> UIImage? {
     let flutterKey = FlutterDartProject.lookupKey(forAsset: assetPath)
     guard let path = Bundle.main.path(forResource: flutterKey, ofType: nil) else {
@@ -148,7 +165,7 @@ final class ImageUtils {
     format: String? = nil,
     size: CGSize? = nil,
     color: UIColor? = nil,
-    scale: CGFloat = UIScreen.main.scale
+    scale: CGFloat = ImageUtils.displayScale
   ) -> UIImage? {
     // Detect format
     let detectedFormat = format ?? detectImageFormat(assetPath: nil, imageData: data)
@@ -283,7 +300,7 @@ final class ImageUtils {
     iconSize: CGFloat? = nil,
     iconColor: Int? = nil,
     providedFormat: String? = nil,
-    scale: CGFloat = UIScreen.main.scale
+    scale: CGFloat = ImageUtils.displayScale
   ) -> UIImage? {
     let detectedFormat = detectImageFormat(assetPath: assetPath, providedFormat: providedFormat)
     let size: CGSize?
@@ -317,7 +334,7 @@ final class ImageUtils {
     iconSize: CGFloat? = nil,
     iconColor: Int? = nil,
     providedFormat: String? = nil,
-    scale: CGFloat = UIScreen.main.scale
+    scale: CGFloat = ImageUtils.displayScale
   ) -> UIImage? {
     let detectedFormat = detectImageFormat(assetPath: nil, providedFormat: providedFormat, imageData: data)
     let size: CGSize?

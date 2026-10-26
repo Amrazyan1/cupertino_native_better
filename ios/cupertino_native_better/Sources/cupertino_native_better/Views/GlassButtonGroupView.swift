@@ -301,15 +301,15 @@ class GlassButtonGroupPlatformView: NSObject, FlutterPlatformView {
                 iconSize: iconSize,
                 iconColor: argb,
                 providedFormat: format,
-                scale: UIScreen.main.scale
+                scale: ImageUtils.displayScale
               )
             } else {
-              iconImage = ImageUtils.loadFlutterAsset(assetPath, size: size, format: format, scale: UIScreen.main.scale)
+              iconImage = ImageUtils.loadFlutterAsset(assetPath, size: size, format: format, scale: ImageUtils.displayScale)
             }
             
             // If no color but size is specified, scale the image
             if iconImage != nil, iconColorARGB == nil, iconImage!.size != size {
-              iconImage = ImageUtils.scaleImage(iconImage!, to: size, scale: UIScreen.main.scale)
+              iconImage = ImageUtils.scaleImage(iconImage!, to: size, scale: ImageUtils.displayScale)
             }
           }
           
@@ -325,10 +325,10 @@ class GlassButtonGroupPlatformView: NSObject, FlutterPlatformView {
                 iconSize: iconSize,
                 iconColor: argb,
                 providedFormat: format,
-                scale: UIScreen.main.scale
+                scale: ImageUtils.displayScale
               )
             } else {
-              iconImage = ImageUtils.createImageFromData(imageBytes.data, format: format, size: size, scale: UIScreen.main.scale)
+              iconImage = ImageUtils.createImageFromData(imageBytes.data, format: format, size: size, scale: ImageUtils.displayScale)
             }
           }
           
@@ -336,7 +336,7 @@ class GlassButtonGroupPlatformView: NSObject, FlutterPlatformView {
           if iconImage == nil, let iconBytes = buttonDict["iconBytes"] as? FlutterStandardTypedData {
             // iconBytes are typically PNG data from IconData rendering
             let size = CGSize(width: iconSize, height: iconSize)
-            iconImage = ImageUtils.createImageFromData(iconBytes.data, format: "png", size: size, scale: UIScreen.main.scale)
+            iconImage = ImageUtils.createImageFromData(iconBytes.data, format: "png", size: size, scale: ImageUtils.displayScale)
           }
           
           // Create callback for this button
@@ -589,14 +589,14 @@ class GlassButtonGroupPlatformView: NSObject, FlutterPlatformView {
           iconSize: iconSize,
           iconColor: argb,
           providedFormat: format,
-          scale: UIScreen.main.scale
+          scale: ImageUtils.displayScale
         )
       } else {
-        iconImage = ImageUtils.loadFlutterAsset(assetPath, size: size, format: format, scale: UIScreen.main.scale)
+        iconImage = ImageUtils.loadFlutterAsset(assetPath, size: size, format: format, scale: ImageUtils.displayScale)
       }
       
       if iconImage != nil, iconColorARGB == nil, iconImage!.size != size {
-        iconImage = ImageUtils.scaleImage(iconImage!, to: size, scale: UIScreen.main.scale)
+        iconImage = ImageUtils.scaleImage(iconImage!, to: size, scale: ImageUtils.displayScale)
       }
     }
     
@@ -611,17 +611,17 @@ class GlassButtonGroupPlatformView: NSObject, FlutterPlatformView {
           iconSize: iconSize,
           iconColor: argb,
           providedFormat: format,
-          scale: UIScreen.main.scale
+          scale: ImageUtils.displayScale
         )
       } else {
-        iconImage = ImageUtils.createImageFromData(imageBytes.data, format: format, size: size, scale: UIScreen.main.scale)
+        iconImage = ImageUtils.createImageFromData(imageBytes.data, format: format, size: size, scale: ImageUtils.displayScale)
       }
     }
     
     // Fallback to iconBytes
     if iconImage == nil, let iconBytes = buttonDict["iconBytes"] as? FlutterStandardTypedData {
       let size = CGSize(width: iconSize, height: iconSize)
-      iconImage = ImageUtils.createImageFromData(iconBytes.data, format: "png", size: size, scale: UIScreen.main.scale)
+      iconImage = ImageUtils.createImageFromData(iconBytes.data, format: "png", size: size, scale: ImageUtils.displayScale)
     }
     
     let isRound = (title == nil && iconName != nil) || (title == nil && iconImage != nil)
@@ -727,14 +727,14 @@ class GlassButtonGroupPlatformView: NSObject, FlutterPlatformView {
             iconSize: iconSize,
             iconColor: argb,
             providedFormat: format,
-            scale: UIScreen.main.scale
+            scale: ImageUtils.displayScale
           )
         } else {
-          iconImage = ImageUtils.loadFlutterAsset(assetPath, size: size, format: format, scale: UIScreen.main.scale)
+          iconImage = ImageUtils.loadFlutterAsset(assetPath, size: size, format: format, scale: ImageUtils.displayScale)
         }
         
         if iconImage != nil, iconColorARGB == nil, iconImage!.size != size {
-          iconImage = ImageUtils.scaleImage(iconImage!, to: size, scale: UIScreen.main.scale)
+          iconImage = ImageUtils.scaleImage(iconImage!, to: size, scale: ImageUtils.displayScale)
         }
       }
       
@@ -748,16 +748,16 @@ class GlassButtonGroupPlatformView: NSObject, FlutterPlatformView {
             iconSize: iconSize,
             iconColor: argb,
             providedFormat: format,
-            scale: UIScreen.main.scale
+            scale: ImageUtils.displayScale
           )
         } else {
-          iconImage = ImageUtils.createImageFromData(imageBytes.data, format: format, size: size, scale: UIScreen.main.scale)
+          iconImage = ImageUtils.createImageFromData(imageBytes.data, format: format, size: size, scale: ImageUtils.displayScale)
         }
       }
       
       if iconImage == nil, let iconBytes = buttonDict["iconBytes"] as? FlutterStandardTypedData {
         let size = CGSize(width: iconSize, height: iconSize)
-        iconImage = ImageUtils.createImageFromData(iconBytes.data, format: "png", size: size, scale: UIScreen.main.scale)
+        iconImage = ImageUtils.createImageFromData(iconBytes.data, format: "png", size: size, scale: ImageUtils.displayScale)
       }
       
       let buttonIndex = index

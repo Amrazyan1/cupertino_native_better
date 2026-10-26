@@ -30,6 +30,7 @@ class CNNavigationBarPlatformView: NSObject, FlutterPlatformView {
     if let spacing = dict["groupSpacing"] as? NSNumber {
       model.groupSpacing = CGFloat(truncating: spacing)
     }
+    model.vertical = (dict["vertical"] as? NSNumber)?.boolValue ?? false
 
     self.hostingController = UIHostingController(rootView: CNNavigationBarSwiftUI(model: model))
     self.hostingController.view.backgroundColor = .clear
@@ -83,6 +84,14 @@ class CNNavigationBarPlatformView: NSObject, FlutterPlatformView {
         } else {
           self.model.leading = leading
           self.model.trailing = trailing
+        }
+        result(nil)
+      case "setVertical":
+        let vertical = ((call.arguments as? [String: Any])?["vertical"] as? NSNumber)?.boolValue ?? false
+        if vertical != self.model.vertical {
+          withAnimation(.spring(duration: 0.38, bounce: 0.22)) {
+            self.model.vertical = vertical
+          }
         }
         result(nil)
       case "requestFrames":

@@ -32,6 +32,9 @@ final class CNNavigationBarModel: ObservableObject {
   @Published var trailing: [CNNavBarGroup] = [] { didSet { scheduleFramesFlush() } }
   /// Per-group counter; bumping it plays that group's glass pulse.
   @Published var pulses: [String: Int] = [:]
+  /// Stack the groups top to bottom along a screen edge (iPhone Duo's
+  /// vertical bars) instead of leading/trailing across the top.
+  @Published var vertical = false { didSet { scheduleFramesFlush() } }
   var horizontalPadding: CGFloat = 16
   var groupSpacing: CGFloat = 10
   var onPressed: (String) -> Void = { _ in }
@@ -139,16 +142,38 @@ struct CNNavigationBarSwiftUI: View {
     // stays separate and fully round; shapes only fuse while a morph brings
     // them closer than this.
     GlassEffectContainer(spacing: max(0, model.groupSpacing - 4)) {
-      HStack(spacing: 0) {
-        HStack(spacing: model.groupSpacing) {
-          ForEach(model.leading) { groupView($0) }
+      if model.vertical {
+        // Like the system's vertical bars: primary navigation (leading) on
+        // top, then the actions, all hanging from the top of the column.
+        // Flutter sizes the column to this content (see the scope's
+        // _verticalExtent): keep both in step.
+        VStack(spacing: model.groupSpacing * 2) {
+          if !model.leading.isEmpty {
+            VStack(spacing: model.groupSpacing) {
+              ForEach(model.leading) { groupView($0) }
+            }
+          }
+          if !model.trailing.isEmpty {
+            VStack(spacing: model.groupSpacing) {
+              ForEach(model.trailing) { groupView($0) }
+            }
+          }
         }
-        Spacer(minLength: 0)
-        HStack(spacing: model.groupSpacing) {
-          ForEach(model.trailing) { groupView($0) }
+        // Room for the glass pulse to swell.
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+      } else {
+        HStack(spacing: 0) {
+          HStack(spacing: model.groupSpacing) {
+            ForEach(model.leading) { groupView($0) }
+          }
+          Spacer(minLength: 0)
+          HStack(spacing: model.groupSpacing) {
+            ForEach(model.trailing) { groupView($0) }
+          }
         }
+        .padding(.horizontal, model.horizontalPadding)
       }
-      .padding(.horizontal, model.horizontalPadding)
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .coordinateSpace(.named(Self.barSpace))
@@ -184,14 +209,18 @@ struct CNNavigationBarSwiftUI: View {
   @ViewBuilder
   private func glassGroup(_ group: CNNavBarGroup, blur: CGFloat) -> some View {
     let isMulti = group.items.count > 1
-    let fixedWidth = group.width
+    let vertical = model.vertical
+    // A vertical bar has a fixed width: a capsule holds one 44pt item per
+    // row, so groups of several items grow downwards instead.
+    let fixedWidth = vertical ? 44 : group.width
     let foreground: Color = group.tint != nil ? .white : .primary
-    HStack(spacing: 0) {
+    let stack = vertical ? AnyLayout(VStackLayout(spacing: 0)) : AnyLayout(HStackLayout(spacing: 0))
+    stack {
       ForEach(group.items) { item in
         Button {
           model.onPressed(item.id)
         } label: {
-          itemLabel(item, compact: fixedWidth != nil)
+          itemLabel(item, compact: fixedWidth != nil, iconOnly: vertical)
             .foregroundStyle(item.color ?? foreground)
             .frame(minWidth: fixedWidth == nil ? (isMulti ? 36 : 44) : nil, minHeight: 44)
             .padding(.horizontal, fixedWidth == nil && item.label != nil ? 14 : 0)
@@ -211,7 +240,8 @@ struct CNNavigationBarSwiftUI: View {
     }
     .blur(radius: blur)
     .padding(.horizontal, isMulti && fixedWidth == nil ? 6 : 0)
-    .frame(width: fixedWidth, height: 44)
+    .padding(.vertical, isMulti && vertical ? 6 : 0)
+    .frame(width: fixedWidth, height: vertical ? nil : 44)
     .glassEffect(
       group.tint.map { Glass.regular.tint($0).interactive() } ?? Glass.regular.interactive(),
       in: .capsule
@@ -220,8 +250,13 @@ struct CNNavigationBarSwiftUI: View {
   }
 
   @ViewBuilder
-  private func itemLabel(_ item: CNNavBarItem, compact: Bool) -> some View {
-    if let symbol = item.symbol, let label = item.label, compact {
+  private func itemLabel(_ item: CNNavBarItem, compact: Bool, iconOnly: Bool) -> some View {
+    if let symbol = item.symbol, iconOnly {
+      // Vertical bars show symbols only; the label stays for accessibility.
+      Image(systemName: symbol)
+        .font(.system(size: item.symbolSize, weight: .medium))
+        .accessibilityLabel(item.label.map { Text($0) } ?? Text(symbol))
+    } else if let symbol = item.symbol, let label = item.label, compact {
       // Fixed-width capsule (e.g. back + unread count in a 44pt circle):
       // Label's icon/title gap is too wide, and "99+" shrinks rather than clips.
       HStack(spacing: 1) {

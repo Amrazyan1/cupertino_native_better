@@ -16,8 +16,15 @@ class CupertinoTabBarViewFactory: NSObject, FlutterPlatformViewFactory {
   func create(withFrame frame: CGRect, viewIdentifier viewId: Int64, arguments args: Any?) -> FlutterPlatformView {
     // Check if search is enabled and we're on iOS 26+
     var hasSearch = false
+    var vertical = false
     if let dict = args as? [String: Any] {
       hasSearch = (dict["hasSearch"] as? NSNumber)?.boolValue ?? false
+      vertical = (dict["vertical"] as? NSNumber)?.boolValue ?? false
+    }
+
+    // Icon-only capsule for a vertical bar column (iPhone Duo)
+    if #available(iOS 26.0, *), vertical {
+      return CNVerticalTabBarPlatformView(frame: frame, viewId: viewId, args: args, messenger: messenger)
     }
 
     // Use SwiftUI-based implementation for iOS 26+ with search enabled

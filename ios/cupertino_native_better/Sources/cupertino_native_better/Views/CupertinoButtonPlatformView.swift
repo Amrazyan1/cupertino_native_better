@@ -41,7 +41,7 @@ class CupertinoButtonPlatformView: NSObject, FlutterPlatformView {
     var enabled: Bool = true
     var iconMode: String? = nil
     var iconPalette: [NSNumber] = []
-    var iconScale: CGFloat = UIScreen.main.scale
+    var iconScale: CGFloat = ImageUtils.displayScale
     var imagePlacement: String = "leading"
     var imagePadding: CGFloat? = nil
     var paddingTop: CGFloat? = nil
@@ -452,15 +452,15 @@ class CupertinoButtonPlatformView: NSObject, FlutterPlatformView {
                 iconSize: size.width,
                 iconColor: argb,
                 providedFormat: format,
-                scale: UIScreen.main.scale
+                scale: ImageUtils.displayScale
               )
             } else {
-              image = ImageUtils.loadFlutterAsset(assetPath, size: size, format: format, scale: UIScreen.main.scale)
+              image = ImageUtils.loadFlutterAsset(assetPath, size: size, format: format, scale: ImageUtils.displayScale)
             }
             
             // If no color but size is specified, scale the image
             if image != nil, iconColorARGB == nil, image!.size != size {
-              image = ImageUtils.scaleImage(image!, to: size, scale: UIScreen.main.scale)
+              image = ImageUtils.scaleImage(image!, to: size, scale: ImageUtils.displayScale)
             }
           } else if let imageData = args["buttonImageData"] as? FlutterStandardTypedData {
             imageIsAsset = true
@@ -474,13 +474,13 @@ class CupertinoButtonPlatformView: NSObject, FlutterPlatformView {
                 iconSize: size.width,
                 iconColor: argb,
                 providedFormat: format,
-                scale: UIScreen.main.scale
+                scale: ImageUtils.displayScale
               )
             } else {
-              image = ImageUtils.createImageFromData(imageData.data, format: format, size: size, scale: UIScreen.main.scale)
+              image = ImageUtils.createImageFromData(imageData.data, format: format, size: size, scale: ImageUtils.displayScale)
             }
           } else if let customIconBytes = args["buttonCustomIconBytes"] as? FlutterStandardTypedData {
-            image = UIImage(data: customIconBytes.data, scale: UIScreen.main.scale)?.withRenderingMode(.alwaysTemplate)
+            image = UIImage(data: customIconBytes.data, scale: ImageUtils.displayScale)?.withRenderingMode(.alwaysTemplate)
           } else if let name = args["buttonIconName"] as? String {
             image = UIImage(systemName: name)
           }

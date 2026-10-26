@@ -122,7 +122,12 @@ class CNTabBar extends StatefulWidget {
     this.labelFontSize,
     this.autoHideOnModal = true,
     this.autoHideOnPageTransition = true,
+    this.axis = Axis.horizontal,
   }) : assert(items.length >= 2, 'Tab bar must have at least 2 items'),
+       assert(
+         axis == Axis.horizontal || searchItem == null,
+         'A vertical tab bar has no search tab',
+       ),
        assert(
          items.length <= 5,
          'Tab bar should have 5 or fewer items for optimal usability',
@@ -275,6 +280,21 @@ class CNTabBar extends StatefulWidget {
   /// the tab bar.
   final bool autoHideOnPageTransition;
 
+  /// [Axis.vertical] draws the tabs as an icon-only glass capsule
+  /// [verticalWidth] wide, stacked top to bottom — the tab bar of iPhone
+  /// Duo's vertical bar column (see [CNNavigationBarScope.verticalColumnOf]
+  /// for where to place it). Labels become accessibility labels; tint,
+  /// badges, image assets (including [CNTabBarItem.originalColors]) and
+  /// [onTap] work as in the horizontal bar. [split], [height] and
+  /// [searchItem] don't apply. Native on iOS 26+; elsewhere a Flutter column.
+  final Axis axis;
+
+  /// Width of a vertical tab bar.
+  static const double verticalWidth = 56;
+
+  /// Height of a vertical tab bar with [itemCount] tabs.
+  static double verticalHeight(int itemCount) => itemCount * 48.0 + 8;
+
   @override
   State<CNTabBar> createState() => _CNTabBarState();
 }
@@ -332,6 +352,16 @@ class _CNTabBarState extends State<CNTabBar> {
 
   // Whether search mode is enabled
   bool get _hasSearch => widget.searchItem != null;
+
+  bool get _vertical => widget.axis == Axis.vertical;
+
+  /// Space the bar takes while its platform view is hidden.
+  Size get _placeholderSize => _vertical
+      ? Size(
+          CNTabBar.verticalWidth,
+          CNTabBar.verticalHeight(widget.items.length),
+        )
+      : Size(0, widget.height ?? _intrinsicHeight ?? 50.0);
 
   // Lifecycle-managed native view preparation.
   // Async work is kicked off once in initState and guarded by a monotonic
@@ -572,11 +602,11 @@ class _CNTabBarState extends State<CNTabBar> {
     // destroyed, so when the transition completes the bar is just
     // there with the correct selected index, no recreate animation.
     final hideForModal = _modalUp && widget.autoHideOnModal;
-    final h = widget.height ?? _intrinsicHeight ?? 50.0;
+    final placeholder = SizedBox.fromSize(size: _placeholderSize);
 
     // Modal hide must DESTROY the platform view — see comment above.
     if (hideForModal) {
-      return SizedBox(height: h);
+      return placeholder;
     }
 
     // _creationParams is built once in initState/_scheduleNativePreparation
@@ -590,6 +620,9 @@ class _CNTabBarState extends State<CNTabBar> {
     if (_creationParams!['selectedIndex'] != widget.currentIndex) {
       _creationParams!['selectedIndex'] = widget.currentIndex;
     }
+    // The native view is picked at creation; a new axis means a new view
+    // (keyed below).
+    _creationParams!['vertical'] = _vertical;
 
     final platformView = _buildNativeTabBarPlatformView(_creationParams!);
 
@@ -605,10 +638,7 @@ class _CNTabBarState extends State<CNTabBar> {
       return IndexedStack(
         index: _pageTransitioning ? 0 : 1,
         sizing: StackFit.passthrough,
-        children: [
-          SizedBox(height: h),
-          platformView,
-        ],
+        children: [placeholder, platformView],
       );
     }
     return platformView;
@@ -772,6 +802,7 @@ class _CNTabBarState extends State<CNTabBar> {
       if (widget.labelFontFamily != null)
         'labelFontFamily': widget.labelFontFamily,
       if (widget.labelFontSize != null) 'labelFontSize': widget.labelFontSize,
+      'vertical': _vertical,
       'split': _hasSearch ? true : widget.split,
       'rightCount': widget.rightCount,
       'splitSpacing': widget.splitSpacing,
@@ -851,6 +882,7 @@ class _CNTabBarState extends State<CNTabBar> {
     const viewType = 'CupertinoNativeTabBar';
     final platformView = defaultTargetPlatform == TargetPlatform.iOS
         ? UiKitView(
+            key: ValueKey(_vertical),
             viewType: viewType,
             creationParams: creationParams,
             creationParamsCodec: const StandardMessageCodec(),
@@ -883,6 +915,9 @@ class _CNTabBarState extends State<CNTabBar> {
             },
           );
 
+    if (_vertical) {
+      return SizedBox.fromSize(size: _placeholderSize, child: platformView);
+    }
     final h = widget.height ?? _intrinsicHeight ?? 50.0;
     if (!widget.split && widget.shrinkCentered) {
       final w = _intrinsicWidth;
@@ -1207,7 +1242,8 @@ class _CNTabBarState extends State<CNTabBar> {
       .join('|');
 
   Future<void> _requestIntrinsicSize() async {
-    if (widget.height != null) return;
+    // A vertical bar's size is fixed, and must not leak into the horizontal one.
+    if (widget.height != null || _vertical) return;
     final ch = _channel;
     if (ch == null) return;
     try {
@@ -1227,6 +1263,8 @@ class _CNTabBarState extends State<CNTabBar> {
   Widget _buildFlutterFallback(BuildContext context) {
     final tintColor = widget.tint ?? ThemeHelper.getPrimaryColor(context);
     final style = widget.searchItem?.style ?? const CNTabBarSearchStyle();
+
+    if (_vertical) return _buildVerticalFallback(context, tintColor);
 
     // If no search item, just return regular CupertinoTabBar
     if (!_hasSearch) {
@@ -1535,6 +1573,77 @@ class _CNTabBarState extends State<CNTabBar> {
   /// Mirrors the native sizing precedence used in [_prepareCreationParams]:
   /// bar-level [CNTabBar.iconSize] wins, then per-item icon/imageAsset size,
   /// finally the standard 25pt tab-bar icon size.
+  Widget _buildVerticalFallback(BuildContext context, Color? tintColor) {
+    final size = _placeholderSize;
+    return Container(
+      width: size.width,
+      height: size.height,
+      padding: const EdgeInsets.all(4),
+      decoration: ShapeDecoration(
+        color: CupertinoColors.tertiarySystemFill.resolveFrom(context),
+        shape: const StadiumBorder(),
+      ),
+      child: Column(
+        children: [
+          for (var i = 0; i < widget.items.length; i++)
+            Semantics(
+              label: widget.items[i].label,
+              selected: widget.currentIndex == i,
+              child: CupertinoButton(
+                padding: EdgeInsets.zero,
+                minimumSize: const Size(48, 48),
+                onPressed: () => widget.onTap(i),
+                child: IconTheme(
+                  data: IconThemeData(
+                    color: widget.currentIndex == i
+                        ? tintColor
+                        : CupertinoColors.label.resolveFrom(context),
+                  ),
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      SizedBox.square(
+                        dimension: 26,
+                        child: FittedBox(
+                          child: _buildTabIcon(
+                            widget.items[i],
+                            isActive: widget.currentIndex == i,
+                          ),
+                        ),
+                      ),
+                      if (widget.items[i].badge?.isNotEmpty ?? false)
+                        Positioned(
+                          top: -6,
+                          right: -10,
+                          child: Container(
+                            constraints: const BoxConstraints(minWidth: 18),
+                            height: 18,
+                            padding: const EdgeInsets.symmetric(horizontal: 5),
+                            alignment: Alignment.center,
+                            decoration: const ShapeDecoration(
+                              color: CupertinoColors.systemRed,
+                              shape: StadiumBorder(),
+                            ),
+                            child: Text(
+                              widget.items[i].badge!,
+                              style: const TextStyle(
+                                color: CupertinoColors.white,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildTabIcon(CNTabBarItem item, {required bool isActive}) {
     const defaultSize = 25.0;
 

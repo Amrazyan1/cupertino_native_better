@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 
 import '../channel/params.dart';
 import '../style/sf_symbol.dart';
+import '../utils/display_layout.dart';
 import '../utils/theme_helper.dart';
 import '../utils/version_detector.dart';
 
@@ -116,6 +117,10 @@ class CNNavigationBarGroup {
 /// pushes and pops, wrap a [Navigator] in a [CNNavigationBarScope] and declare
 /// each page's buttons with [CNNavigationBarItems].
 ///
+/// With [axis] set to [Axis.vertical] the groups stack top to bottom in a
+/// column [height] wide, like the vertical bars of iPhone Duo (iOS only; the
+/// macOS bar stays horizontal). [CNNavigationBarScope] switches automatically.
+///
 /// On iOS / macOS < 26 a Flutter fallback is shown.
 class CNNavigationBar extends StatefulWidget {
   /// Creates a morphing glass navigation bar.
@@ -127,6 +132,7 @@ class CNNavigationBar extends StatefulWidget {
     this.horizontalPadding = 16.0,
     this.groupSpacing = 10.0,
     this.pageKey,
+    this.axis = Axis.horizontal,
   });
 
   /// Default bar height.
@@ -138,10 +144,10 @@ class CNNavigationBar extends StatefulWidget {
   /// Glass groups aligned to the trailing edge.
   final List<CNNavigationBarGroup> trailing;
 
-  /// Height of the bar.
+  /// Height of a horizontal bar, or width of a vertical one.
   final double height;
 
-  /// Inset of the outermost groups from the screen edges.
+  /// Inset of the outermost groups from the screen edges (horizontal bar).
   final double horizontalPadding;
 
   /// Gap between neighbouring groups on the same side.
@@ -151,6 +157,12 @@ class CNNavigationBar extends StatefulWidget {
   /// counts as navigation and every capsule plays the glass pulse (swell and
   /// blur), as on a push or pop; otherwise only the capsules that changed do.
   final Object? pageKey;
+
+  /// [Axis.horizontal] lays the groups out leading/trailing across the top;
+  /// [Axis.vertical] stacks them from the top of a side column (leading
+  /// groups first), showing icons only — give every item an [icon]; a
+  /// text-only item is shrunk to fit the 44pt-wide capsule. Changes animate.
+  final Axis axis;
 
   @override
   State<CNNavigationBar> createState() => _CNNavigationBarState();
@@ -162,6 +174,7 @@ class _CNNavigationBarState extends State<CNNavigationBar>
   String? _lastSignature;
   Object? _lastPageKey;
   bool? _lastIsDark;
+  bool _lastVertical = false;
   Map<String, Object?> _lastItems = const {};
   Map<String, VoidCallback> _callbacks = const {};
 
@@ -283,6 +296,7 @@ class _CNNavigationBarState extends State<CNNavigationBar>
     if (_lastIsDark != null) {
       channel.invokeMethod('setBrightness', {'isDark': _lastIsDark});
     }
+    if (_lastVertical) channel.invokeMethod('setVertical', {'vertical': true});
   }
 
   @override
@@ -295,6 +309,10 @@ class _CNNavigationBarState extends State<CNNavigationBar>
     _callbacks = callbacks;
     final isDark = ThemeHelper.isDark(context);
     final signature = jsonEncode([leading, trailing]);
+    // The macOS bar has no vertical layout.
+    final vertical =
+        widget.axis == Axis.vertical &&
+        defaultTargetPlatform == TargetPlatform.iOS;
 
     final channel = _channel;
     if (channel != null) {
@@ -312,8 +330,12 @@ class _CNNavigationBarState extends State<CNNavigationBar>
       if (isDark != _lastIsDark) {
         channel.invokeMethod('setBrightness', {'isDark': isDark});
       }
+      if (vertical != _lastVertical) {
+        channel.invokeMethod('setVertical', {'vertical': vertical});
+      }
     }
     _lastSignature = signature;
+    _lastVertical = vertical;
     _lastPageKey = widget.pageKey;
     _lastIsDark = isDark;
     _lastItems = {'leading': leading, 'trailing': trailing};
@@ -324,6 +346,7 @@ class _CNNavigationBarState extends State<CNNavigationBar>
       'horizontalPadding': widget.horizontalPadding,
       'groupSpacing': widget.groupSpacing,
       'isDark': isDark,
+      'vertical': vertical,
     };
 
     const viewType = 'CNNavigationBar';
@@ -335,8 +358,8 @@ class _CNNavigationBarState extends State<CNNavigationBar>
     return _CNHitRegions(
       rects: _hitRectsFor(groupIds),
       child: SizedBox(
-        height: widget.height,
-        width: double.infinity,
+        height: vertical ? double.infinity : widget.height,
+        width: vertical ? widget.height : double.infinity,
         child: defaultTargetPlatform == TargetPlatform.iOS
             ? UiKitView(
                 viewType: viewType,
@@ -355,15 +378,35 @@ class _CNNavigationBarState extends State<CNNavigationBar>
   }
 
   Widget _buildFallback(BuildContext context) {
+    final vertical = widget.axis == Axis.vertical;
     Widget side(List<CNNavigationBarGroup> groups, String name) {
-      return Row(
+      return Flex(
+        direction: widget.axis,
         mainAxisSize: MainAxisSize.min,
         children: [
           for (var g = 0; g < groups.length; g++) ...[
-            if (g > 0) SizedBox(width: widget.groupSpacing),
-            _FallbackGroup(group: groups[g]),
+            if (g > 0) SizedBox.square(dimension: widget.groupSpacing),
+            _FallbackGroup(group: groups[g], vertical: vertical),
           ],
         ],
+      );
+    }
+
+    if (vertical) {
+      return SizedBox(
+        width: widget.height,
+        height: double.infinity,
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 250),
+          child: Column(
+            key: ValueKey(_fallbackKey()),
+            children: [
+              side(widget.leading, 'leading'),
+              SizedBox(height: widget.groupSpacing * 2),
+              side(widget.trailing, 'trailing'),
+            ],
+          ),
+        ),
       );
     }
 
@@ -430,9 +473,12 @@ class _RenderCNHitRegions extends RenderProxyBox {
 }
 
 class _FallbackGroup extends StatelessWidget {
-  const _FallbackGroup({required this.group});
+  const _FallbackGroup({required this.group, this.vertical = false});
 
   final CNNavigationBarGroup group;
+
+  /// One 44pt icon-only item per row, as in the native vertical bar.
+  final bool vertical;
 
   @override
   Widget build(BuildContext context) {
@@ -442,11 +488,19 @@ class _FallbackGroup extends StatelessWidget {
     final foreground = tint != null
         ? CupertinoColors.white
         : CupertinoColors.label.resolveFrom(context);
-    final fixedWidth = group.width;
+    final fixedWidth = vertical ? 44.0 : group.width;
     final compact = fixedWidth != null;
 
     Widget content(CNNavigationBarItem item) {
       final color = item._effectiveColor ?? foreground;
+      if (vertical && item.icon != null) {
+        return Icon(
+          _fallbackIcon(item.icon!.name),
+          size: item.icon!.size + 3,
+          color: color,
+          semanticLabel: item.label,
+        );
+      }
 
       return Row(
         mainAxisSize: MainAxisSize.min,
@@ -470,6 +524,29 @@ class _FallbackGroup extends StatelessWidget {
               ),
             ),
         ],
+      );
+    }
+
+    if (vertical) {
+      return Container(
+        width: fixedWidth,
+        padding: EdgeInsets.symmetric(vertical: group.items.length > 1 ? 6 : 0),
+        decoration: ShapeDecoration(
+          color: background,
+          shape: const StadiumBorder(),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final item in group.items)
+              CupertinoButton(
+                padding: EdgeInsets.zero,
+                minimumSize: const Size(44, 44),
+                onPressed: item.enabled ? item.onPressed : null,
+                child: FittedBox(fit: BoxFit.scaleDown, child: content(item)),
+              ),
+          ],
+        ),
       );
     }
 
@@ -542,6 +619,58 @@ class _FallbackGroup extends StatelessWidget {
   }
 }
 
+/// Where a [CNNavigationBarScope] lays out its vertical bar column, for
+/// placing other bar content (e.g. a vertical [CNTabBar]) in the same
+/// column. All values are in the scope's coordinates.
+@immutable
+class CNVerticalBarColumn {
+  /// Creates a column description.
+  const CNVerticalBarColumn({
+    required this.edge,
+    required this.inset,
+    required this.width,
+    required this.top,
+    required this.bottom,
+  });
+
+  /// The side of the scope the column is on.
+  final CNVerticalBarEdge edge;
+
+  /// Distance of the column from [edge].
+  final double inset;
+
+  /// Width of the column.
+  final double width;
+
+  /// Where the column starts: below the status bar and camera.
+  final double top;
+
+  /// Where the column ends, measured from the bottom: the bottom safe area.
+  /// A vertical tab bar sits flush on it:
+  ///
+  /// ```dart
+  /// Positioned(
+  ///   right: column.edge == CNVerticalBarEdge.right ? column.inset : null,
+  ///   left: column.edge == CNVerticalBarEdge.left ? column.inset : null,
+  ///   bottom: column.bottom,
+  ///   child: CNTabBar(axis: Axis.vertical, ...),
+  /// )
+  /// ```
+  final double bottom;
+
+  @override
+  bool operator ==(Object other) =>
+      other is CNVerticalBarColumn &&
+      other.edge == edge &&
+      other.inset == inset &&
+      other.width == width &&
+      other.top == top &&
+      other.bottom == bottom;
+
+  @override
+  int get hashCode => Object.hash(edge, inset, width, top, bottom);
+}
+
 /// Hosts a single [CNNavigationBar] above [child] — typically a [Navigator] —
 /// and shows the buttons declared by the visible page's
 /// [CNNavigationBarItems].
@@ -553,6 +682,18 @@ class _FallbackGroup extends StatelessWidget {
 ///
 /// Pages lay out their own content (including any title) and should leave
 /// [height] of space below the top safe area for the bar.
+///
+/// Where the system puts bars on a side edge (iPhone Duo, see
+/// [CNDisplayLayout.verticalBarEdge]) the bar becomes a column on that edge,
+/// below the status bar and camera, and the scope adds the column to the
+/// [MediaQuery] padding on that side so [SafeArea]s below keep clear of it.
+/// Pages can check [verticalEdgeOf] to drop the space they leave at the top,
+/// and [verticalColumnOf] gives the column itself, e.g. to put a vertical
+/// [CNTabBar] at its bottom. The navigation buttons take only the top of the
+/// column, as tall as their capsules.
+/// A scope that doesn't reach that edge — its [MediaQuery] padding there is
+/// zero, e.g. inside a sheet inset from the side safe areas — keeps a
+/// horizontal bar.
 ///
 /// ```dart
 /// CNNavigationBarScope(
@@ -588,6 +729,18 @@ class CNNavigationBarScope extends StatefulWidget {
   /// See [CNNavigationBar.groupSpacing].
   final double groupSpacing;
 
+  /// The edge the enclosing scope's bar is drawn on as a vertical column, or
+  /// null while it is a horizontal bar at the top (or there is no scope).
+  static CNVerticalBarEdge? verticalEdgeOf(BuildContext context) =>
+      verticalColumnOf(context)?.edge;
+
+  /// The enclosing scope's vertical bar column, or null while its bar is
+  /// horizontal (or there is no scope). Reported whether or not the visible
+  /// page has navigation buttons.
+  static CNVerticalBarColumn? verticalColumnOf(BuildContext context) => context
+      .dependOnInheritedWidgetOfExactType<_CNNavigationBarScopeMarker>()
+      ?.column;
+
   @override
   State<CNNavigationBarScope> createState() => _CNNavigationBarScopeState();
 }
@@ -603,10 +756,28 @@ class _CNNavigationBarScopeState extends State<CNNavigationBarScope> {
   Timer? _unmountTimer;
   static const _unmountDelay = Duration(milliseconds: 800);
 
+  /// Where the system puts vertical bars; only followed by the native iOS bar.
+  ValueListenable<CNDisplayLayout>? _displayLayout;
+
+  @override
+  void initState() {
+    super.initState();
+    if (defaultTargetPlatform == TargetPlatform.iOS &&
+        PlatformVersion.shouldUseNativeGlass) {
+      _displayLayout = CNDisplayLayout.listenable
+        ..addListener(_onDisplayLayout);
+    }
+  }
+
   @override
   void dispose() {
+    _displayLayout?.removeListener(_onDisplayLayout);
     _unmountTimer?.cancel();
     super.dispose();
+  }
+
+  void _onDisplayLayout() {
+    if (mounted) setState(() {});
   }
 
   void _register(_CNNavigationBarItemsState entry) {
@@ -682,46 +853,189 @@ class _CNNavigationBarScopeState extends State<CNNavigationBarScope> {
     final active = _active?.widget;
     // An empty bar keeps the last inset so it doesn't move while invisible.
     if (active != null) _topInset = active.topInset;
-    final top = MediaQuery.paddingOf(context).top + _topInset;
+    final layout = _displayLayout?.value ?? CNDisplayLayout.empty;
+    final padding = MediaQuery.paddingOf(context);
+    // Go vertical only if the scope reaches the side the system bars sit on
+    // (its safe area has an inset there), like a view's safeAreaInsets, and
+    // no enclosing scope already owns that column: a nested scope would see
+    // the column's raised padding and place itself with window coordinates
+    // that aren't its own.
+    final nested = CNNavigationBarScope.verticalColumnOf(context) != null;
+    final edge = nested
+        ? null
+        : switch (layout.verticalBarEdge) {
+            CNVerticalBarEdge.left when padding.left > 0 =>
+              CNVerticalBarEdge.left,
+            CNVerticalBarEdge.right when padding.right > 0 =>
+              CNVerticalBarEdge.right,
+            _ => null,
+          };
+
+    final column = edge == null
+        ? null
+        : _verticalColumn(context, layout, edge, padding);
+    var childPadding = padding;
+    if (column != null) {
+      // Content keeps clear of the column, as with the system's vertical
+      // bars, which add to the safe area on their side.
+      final reach = column.inset + column.width;
+      childPadding = column.edge == CNVerticalBarEdge.left
+          ? padding.copyWith(left: reach > padding.left ? reach : null)
+          : padding.copyWith(right: reach > padding.right ? reach : null);
+    }
+
+    final Widget? bar;
+    if (!_mountBar) {
+      bar = null;
+    } else if (column == null) {
+      // Horizontal bar under the status bar, kept inside the side safe areas
+      // (e.g. clear of a camera or status column on the right).
+      bar = AnimatedPositioned(
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOutCubic,
+        top: padding.top + _topInset,
+        left: padding.left,
+        right: padding.right,
+        height: widget.height,
+        child: _bar(active, Axis.horizontal),
+      );
+    } else {
+      // Only as tall as the capsules, so the rest of the column (e.g. a
+      // vertical tab bar at its bottom) stays free.
+      bar = AnimatedPositioned(
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOutCubic,
+        top: column.top,
+        height: _verticalExtent(active),
+        left: column.edge == CNVerticalBarEdge.left ? column.inset : null,
+        right: column.edge == CNVerticalBarEdge.right ? column.inset : null,
+        width: column.width,
+        child: _bar(active, Axis.vertical),
+      );
+    }
+
     return _CNNavigationBarScopeMarker(
       state: this,
+      column: column,
       child: Stack(
         children: [
-          Positioned.fill(child: widget.child),
-          if (_mountBar)
-            AnimatedPositioned(
-              duration: const Duration(milliseconds: 250),
-              curve: Curves.easeOutCubic,
-              top: top,
-              left: 0,
-              right: 0,
-              height: widget.height,
-              child: CNNavigationBar(
-                leading: active?.leading ?? const [],
-                trailing: active?.trailing ?? const [],
-                height: widget.height,
-                horizontalPadding: widget.horizontalPadding,
-                groupSpacing: widget.groupSpacing,
-                pageKey: _active,
-              ),
+          // Always wrapped, so switching axis doesn't rebuild the subtree.
+          Positioned.fill(
+            child: _CNPaddingOverride(
+              padding: childPadding,
+              child: widget.child,
             ),
+          ),
+          ?bar,
         ],
       ),
     );
   }
+
+  Widget _bar(CNNavigationBarItems? active, Axis axis) => CNNavigationBar(
+    leading: active?.leading ?? const [],
+    trailing: active?.trailing ?? const [],
+    height: widget.height,
+    horizontalPadding: widget.horizontalPadding,
+    groupSpacing: widget.groupSpacing,
+    pageKey: _active,
+    axis: axis,
+  );
+
+  /// Height of the vertical bar's content, matching the native layout: 44pt
+  /// per item, multi-item capsules padded by 6 at each end, [groupSpacing]
+  /// between capsules and twice that between the leading and trailing
+  /// stacks, plus 6 above and below for the glass pulse.
+  double _verticalExtent(CNNavigationBarItems? active) {
+    double side(List<CNNavigationBarGroup> groups) {
+      if (groups.isEmpty) return 0;
+      var extent = widget.groupSpacing * (groups.length - 1);
+      for (final group in groups) {
+        extent += group.items.length * 44 + (group.items.length > 1 ? 12 : 0);
+      }
+      return extent;
+    }
+
+    final leading = side(active?.leading ?? const []);
+    final trailing = side(active?.trailing ?? const []);
+    final between = leading > 0 && trailing > 0 ? widget.groupSpacing * 2 : 0;
+    return leading + between + trailing + 12;
+  }
+
+  /// Places the vertical bar on [edge]: centred in the safe-area strip on
+  /// that side when it is wide enough (otherwise flush with the screen edge),
+  /// starting below whatever the system keeps at the top of the strip — the
+  /// status bar, the camera — or the top safe area.
+  CNVerticalBarColumn _verticalColumn(
+    BuildContext context,
+    CNDisplayLayout layout,
+    CNVerticalBarEdge edge,
+    EdgeInsets padding,
+  ) {
+    final width = MediaQuery.sizeOf(context).width;
+    final strip = edge == CNVerticalBarEdge.left ? padding.left : padding.right;
+    final inset = strip >= widget.height ? (strip - widget.height) / 2 : 0.0;
+    final left = edge == CNVerticalBarEdge.left
+        ? inset
+        : width - inset - widget.height;
+    final right = left + widget.height;
+
+    // Walk down from the top safe area past whatever sits in the column's
+    // path. Only things starting before there's room for a button count, so
+    // an occlusion further down the edge doesn't push the whole column.
+    var top = padding.top;
+    final above = [
+      ?layout.statusBarFrame,
+      for (final r in layout.regions(CNReservedRegionKind.occlusion)) r.frame,
+    ]..sort((a, b) => a.top.compareTo(b.top));
+    for (final rect in above) {
+      if (rect.left < right &&
+          rect.right > left &&
+          rect.top < top + 44 &&
+          rect.bottom > top) {
+        top = rect.bottom;
+      }
+    }
+    return CNVerticalBarColumn(
+      edge: edge,
+      inset: inset,
+      width: widget.height,
+      top: top + _topInset,
+      bottom: padding.bottom,
+    );
+  }
+}
+
+/// Overrides the [MediaQuery] padding for [child]. Kept out of the scope's
+/// own build so the scope depends only on padding and size, not on every
+/// MediaQuery change (e.g. each frame of the keyboard animation).
+class _CNPaddingOverride extends StatelessWidget {
+  const _CNPaddingOverride({required this.padding, required this.child});
+
+  final EdgeInsets padding;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => MediaQuery(
+    data: MediaQuery.of(context).copyWith(padding: padding),
+    child: child,
+  );
 }
 
 class _CNNavigationBarScopeMarker extends InheritedWidget {
   const _CNNavigationBarScopeMarker({
     required this.state,
+    required this.column,
     required super.child,
   });
 
   final _CNNavigationBarScopeState state;
 
+  final CNVerticalBarColumn? column;
+
   @override
   bool updateShouldNotify(_CNNavigationBarScopeMarker oldWidget) =>
-      !identical(state, oldWidget.state);
+      !identical(state, oldWidget.state) || column != oldWidget.column;
 }
 
 /// Declares the buttons the enclosing [CNNavigationBarScope] should show

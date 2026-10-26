@@ -27,7 +27,7 @@ class CupertinoPopupMenuButtonPlatformView: NSObject, FlutterPlatformView {
   private var itemModes: [String?] = []
   private var itemPalettes: [[NSNumber]] = []
   private var itemGradients: [NSNumber?] = []
-  private var iconScale: CGFloat = UIScreen.main.scale
+  private var iconScale: CGFloat = ImageUtils.displayScale
   private var preserveTopToBottomOrder: Bool = false
   // Track current button icon configuration to keep image across state updates
   private var btnIconName: String? = nil
@@ -61,7 +61,7 @@ class CupertinoPopupMenuButtonPlatformView: NSObject, FlutterPlatformView {
     var enabled: [NSNumber] = []
     var sizes: [Any] = []
     var colors: [Any] = []
-    var iconScale: CGFloat = UIScreen.main.scale
+    var iconScale: CGFloat = ImageUtils.displayScale
     var buttonIconMode: String? = nil
     var buttonIconPalette: [NSNumber] = []
     var buttonCustomIconBytes: Data? = nil
@@ -333,7 +333,7 @@ class CupertinoPopupMenuButtonPlatformView: NSObject, FlutterPlatformView {
 
           // Check button position at display time
           let buttonFrame = self.button.convert(self.button.bounds, to: nil)
-          let screenHeight = UIScreen.main.bounds.height
+          let screenHeight = self.button.window?.bounds.height ?? buttonFrame.maxY
           let opensUpward = buttonFrame.midY > screenHeight * 0.4
 
           if opensUpward {
@@ -739,7 +739,7 @@ class CupertinoPopupMenuButtonPlatformView: NSObject, FlutterPlatformView {
       if buttonStyle == "glass" {
         button.backgroundColor = UIColor(white: 1.0, alpha: 0.22)
         button.layer.borderColor = UIColor.separator.withAlphaComponent(0.45).cgColor
-        button.layer.borderWidth = 1.0 / UIScreen.main.scale
+        button.layer.borderWidth = 1.0 / ImageUtils.displayScale
       } else {
         button.backgroundColor = .clear
         button.layer.borderWidth = 0

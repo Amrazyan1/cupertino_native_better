@@ -25,7 +25,7 @@ class CupertinoTabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelega
   private var currentImageAssetFormats: [String] = []
   private var currentActiveImageAssetFormats: [String] = []
   private var currentOriginalColors: [Bool] = []
-  private var iconScale: CGFloat = UIScreen.main.scale
+  private var iconScale: CGFloat = ImageUtils.displayScale
   private var leftInsetVal: CGFloat = 0
   private var rightInsetVal: CGFloat = 0
   private var splitSpacingVal: CGFloat = 12 // Apple's recommended spacing for visual separation
@@ -50,7 +50,7 @@ class CupertinoTabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelega
     var imageAssetFormats: [String] = []
     var activeImageAssetFormats: [String] = []
     var originalColors: [Bool] = []
-    var iconScale: CGFloat = UIScreen.main.scale
+    var iconScale: CGFloat = ImageUtils.displayScale
     var sizes: [NSNumber?] = []
     var colors: [NSNumber] = [] // ignored; use tintColor
     var selectedIndex: Int = 0
@@ -1093,7 +1093,7 @@ channel.setMethodCallHandler { [weak self] call, result in
   /// For items flagged `originalColors` (e.g. an avatar photo): draw the image
   /// at the item's size (raster data is otherwise shown at its pixel size)
   /// and keep its own colours instead of the tab bar's template tint.
-  private static func applyOriginalColors(_ image: UIImage?, _ flags: [Bool], _ index: Int, size: CGSize?) -> UIImage? {
+  static func applyOriginalColors(_ image: UIImage?, _ flags: [Bool], _ index: Int, size: CGSize?) -> UIImage? {
     guard let image = image, index < flags.count, flags[index] else { return image }
     var result = image
     if let size = size, size.width > 0, size.height > 0, image.size != size {
