@@ -24,6 +24,7 @@ class CNNavigationBarItem {
     this.enabled = true,
     this.color,
     this.labelSize,
+    this.menu,
   }) : assert(icon != null || label != null);
 
   /// Stable identity of the item. When two consecutive configurations share
@@ -38,7 +39,7 @@ class CNNavigationBarItem {
   /// Text to show, alone or next to [icon].
   final String? label;
 
-  /// Called when the item is tapped.
+  /// Called when the item is tapped. Ignored when [menu] is set.
   final VoidCallback? onPressed;
 
   /// Whether the item can be tapped.
@@ -52,7 +53,42 @@ class CNNavigationBarItem {
   /// Font size of [label]; 17 when null.
   final double? labelSize;
 
+  /// Native pull-down menu opened by tapping the item, anchored to it in
+  /// either [Axis]. Changing its actions updates the open bar in place.
+  final CNNavigationBarMenu? menu;
+
   Color? get _effectiveColor => color ?? icon?.color;
+}
+
+/// Pull-down menu of a [CNNavigationBarItem].
+class CNNavigationBarMenu {
+  /// Creates a menu listing [items]; [onSelected] gets the chosen index.
+  const CNNavigationBarMenu({required this.items, required this.onSelected});
+
+  /// Actions, top to bottom.
+  final List<CNNavigationBarMenuItem> items;
+
+  /// Called with the index in [items] of the chosen action.
+  final ValueChanged<int> onSelected;
+}
+
+/// One action in a [CNNavigationBarMenu].
+class CNNavigationBarMenuItem {
+  /// Creates a menu action.
+  const CNNavigationBarMenuItem({
+    required this.label,
+    this.symbol,
+    this.destructive = false,
+  });
+
+  /// Title of the action.
+  final String label;
+
+  /// SF Symbol name shown next to [label], e.g. `'pin'`.
+  final String? symbol;
+
+  /// Shows the action in red, for deleting or other destructive actions.
+  final bool destructive;
 }
 
 /// One Liquid Glass capsule in a [CNNavigationBar], holding one or more items.
@@ -177,6 +213,7 @@ class _CNNavigationBarState extends State<CNNavigationBar>
   bool _lastVertical = false;
   Map<String, Object?> _lastItems = const {};
   Map<String, VoidCallback> _callbacks = const {};
+  Map<String, ValueChanged<int>> _menuCallbacks = const {};
 
   /// Frame of each glass group (bar coordinates, keyed by group id) as last
   /// reported by the native bar; null until the first report.
@@ -228,6 +265,7 @@ class _CNNavigationBarState extends State<CNNavigationBar>
     List<CNNavigationBarGroup> groups,
     String side,
     Map<String, VoidCallback> callbacks,
+    Map<String, ValueChanged<int>> menuCallbacks,
   ) {
     return [
       for (var g = 0; g < groups.length; g++)
@@ -246,7 +284,10 @@ class _CNNavigationBarState extends State<CNNavigationBar>
                   final itemId =
                       item.id ??
                       '$groupId.$i.${item.icon?.name ?? ''}.${item.label ?? ''}';
-                  if (item.onPressed != null) {
+                  final menu = item.menu;
+                  if (menu != null) {
+                    menuCallbacks[itemId] = menu.onSelected;
+                  } else if (item.onPressed != null) {
                     callbacks[itemId] = item.onPressed!;
                   }
                   return <String, Object?>{
@@ -260,7 +301,18 @@ class _CNNavigationBarState extends State<CNNavigationBar>
                       ),
                     if (item.label != null) 'label': item.label,
                     if (item.labelSize != null) 'labelSize': item.labelSize,
-                    'enabled': item.enabled && item.onPressed != null,
+                    'enabled':
+                        item.enabled &&
+                        (menu != null || item.onPressed != null),
+                    if (menu != null)
+                      'menu': [
+                        for (final action in menu.items)
+                          {
+                            'label': action.label,
+                            'symbol': ?action.symbol,
+                            'destructive': action.destructive,
+                          },
+                      ],
                   };
                 }(),
             ],
@@ -276,6 +328,13 @@ class _CNNavigationBarState extends State<CNNavigationBar>
       if (call.method == 'itemPressed') {
         final itemId = (call.arguments as Map?)?['id'] as String?;
         if (itemId != null) _callbacks[itemId]?.call();
+      } else if (call.method == 'menuItemSelected') {
+        final args = call.arguments as Map?;
+        final itemId = args?['id'] as String?;
+        final index = args?['index'] as int?;
+        if (itemId != null && index != null) {
+          _menuCallbacks[itemId]?.call(index);
+        }
       } else if (call.method == 'framesChanged') {
         final frames = (call.arguments as Map?)?['frames'] as List? ?? const [];
         final byId = {
@@ -304,9 +363,21 @@ class _CNNavigationBarState extends State<CNNavigationBar>
     if (!_useNative) return _buildFallback(context);
 
     final callbacks = <String, VoidCallback>{};
-    final leading = _serialize(widget.leading, 'leading', callbacks);
-    final trailing = _serialize(widget.trailing, 'trailing', callbacks);
+    final menuCallbacks = <String, ValueChanged<int>>{};
+    final leading = _serialize(
+      widget.leading,
+      'leading',
+      callbacks,
+      menuCallbacks,
+    );
+    final trailing = _serialize(
+      widget.trailing,
+      'trailing',
+      callbacks,
+      menuCallbacks,
+    );
     _callbacks = callbacks;
+    _menuCallbacks = menuCallbacks;
     final isDark = ThemeHelper.isDark(context);
     final signature = jsonEncode([leading, trailing]);
     // The macOS bar has no vertical layout.
@@ -542,7 +613,7 @@ class _FallbackGroup extends StatelessWidget {
               CupertinoButton(
                 padding: EdgeInsets.zero,
                 minimumSize: const Size(44, 44),
-                onPressed: item.enabled ? item.onPressed : null,
+                onPressed: _fallbackAction(context, item),
                 child: FittedBox(fit: BoxFit.scaleDown, child: content(item)),
               ),
           ],
@@ -570,7 +641,7 @@ class _FallbackGroup extends StatelessWidget {
                     child: CupertinoButton(
                       padding: const EdgeInsets.symmetric(horizontal: 4),
                       minimumSize: const Size(0, 44),
-                      onPressed: item.enabled ? item.onPressed : null,
+                      onPressed: _fallbackAction(context, item),
                       child: FittedBox(
                         fit: BoxFit.scaleDown,
                         child: content(item),
@@ -582,10 +653,40 @@ class _FallbackGroup extends StatelessWidget {
                       horizontal: item.label != null ? 14 : 0,
                     ),
                     minimumSize: const Size(44, 44),
-                    onPressed: item.enabled ? item.onPressed : null,
+                    onPressed: _fallbackAction(context, item),
                     child: content(item),
                   ),
         ],
+      ),
+    );
+  }
+
+  /// The item's tap action; a [CNNavigationBarMenu] opens as an action sheet.
+  static VoidCallback? _fallbackAction(
+    BuildContext context,
+    CNNavigationBarItem item,
+  ) {
+    if (!item.enabled) return null;
+    final menu = item.menu;
+    if (menu == null) return item.onPressed;
+    return () => showCupertinoModalPopup<void>(
+      context: context,
+      builder: (sheetContext) => CupertinoActionSheet(
+        actions: [
+          for (var i = 0; i < menu.items.length; i++)
+            CupertinoActionSheetAction(
+              isDestructiveAction: menu.items[i].destructive,
+              onPressed: () {
+                Navigator.of(sheetContext).pop();
+                menu.onSelected(i);
+              },
+              child: Text(menu.items[i].label),
+            ),
+        ],
+        cancelButton: CupertinoActionSheetAction(
+          onPressed: () => Navigator.of(sheetContext).pop(),
+          child: const Text('Cancel'),
+        ),
       ),
     );
   }

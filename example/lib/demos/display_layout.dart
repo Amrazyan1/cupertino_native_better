@@ -6,8 +6,16 @@ import 'package:flutter/cupertino.dart';
 /// whose bar follows the edge, and a [CNTabBar] that moves into the bottom of
 /// the vertical column when there is one. Open, close, fold and rotate the iPhone Duo
 /// simulator (Xcode 27.1 Device Hub), or use Split View, to watch it change.
-class DisplayLayoutDemoPage extends StatelessWidget {
+class DisplayLayoutDemoPage extends StatefulWidget {
   const DisplayLayoutDemoPage({super.key});
+
+  @override
+  State<DisplayLayoutDemoPage> createState() => _DisplayLayoutDemoPageState();
+}
+
+class _DisplayLayoutDemoPageState extends State<DisplayLayoutDemoPage> {
+  bool _pinned = false;
+  String? _lastAction;
 
   @override
   Widget build(BuildContext context) {
@@ -27,10 +35,31 @@ class DisplayLayoutDemoPage extends StatelessWidget {
                 label: 'Search',
                 onPressed: () {},
               ),
+              // A native pull-down menu; Pin/Unpin updates it in place.
               CNNavigationBarItem(
                 icon: CNSymbol('ellipsis'),
                 label: 'More',
-                onPressed: () {},
+                menu: CNNavigationBarMenu(
+                  items: [
+                    CNNavigationBarMenuItem(
+                      label: _pinned ? 'Unpin' : 'Pin',
+                      symbol: _pinned ? 'pin.slash' : 'pin',
+                    ),
+                    const CNNavigationBarMenuItem(
+                      label: 'Mute',
+                      symbol: 'bell.slash',
+                    ),
+                    const CNNavigationBarMenuItem(
+                      label: 'Delete',
+                      symbol: 'trash',
+                      destructive: true,
+                    ),
+                  ],
+                  onSelected: (index) => setState(() {
+                    _lastAction = const ['Pin/Unpin', 'Mute', 'Delete'][index];
+                    if (index == 0) _pinned = !_pinned;
+                  }),
+                ),
               ),
             ],
           ),
@@ -40,14 +69,17 @@ class DisplayLayoutDemoPage extends StatelessWidget {
             onPressed: () {},
           ),
         ],
-        child: const _LayoutView(),
+        child: _LayoutView(pinned: _pinned, lastAction: _lastAction),
       ),
     );
   }
 }
 
 class _LayoutView extends StatefulWidget {
-  const _LayoutView();
+  const _LayoutView({required this.pinned, required this.lastAction});
+
+  final bool pinned;
+  final String? lastAction;
 
   @override
   State<_LayoutView> createState() => _LayoutViewState();
@@ -157,6 +189,8 @@ class _LayoutViewState extends State<_LayoutView> {
                   if (layout.reservedRegions.isEmpty)
                     _row('Reserved regions', null),
                   _row('Selected tab', _items[_tab].label),
+                  _row('Pinned', widget.pinned ? 'yes' : 'no'),
+                  _row('Last menu action', widget.lastAction),
                   const SizedBox(height: 12),
                   const Text(
                     'Blue: safe area. Red: fold (division). Orange: camera '

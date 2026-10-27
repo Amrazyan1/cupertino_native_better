@@ -53,6 +53,9 @@ class CNNavigationBarPlatformView: NSObject, FlutterPlatformView {
     model.onPressed = { [weak self] id in
       self?.channel.invokeMethod("itemPressed", arguments: ["id": id])
     }
+    model.onMenuSelected = { [weak self] id, index in
+      self?.channel.invokeMethod("menuItemSelected", arguments: ["id": id, "index": index])
+    }
     model.onFramesChanged = { [weak self] frames in
       let list: [[String: Any]] = frames.map {
         ["id": $0.id, "x": $0.rect.minX, "y": $0.rect.minY, "w": $0.rect.width, "h": $0.rect.height]

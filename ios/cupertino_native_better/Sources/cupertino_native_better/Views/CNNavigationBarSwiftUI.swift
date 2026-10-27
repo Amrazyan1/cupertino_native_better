@@ -11,6 +11,16 @@ struct CNNavBarItem: Identifiable, Equatable {
   let labelSize: CGFloat
   let color: Color?
   let enabled: Bool
+  /// Pull-down menu shown on tap instead of reporting a press.
+  let menu: [CNNavBarMenuItem]?
+}
+
+/// One action of a navigation bar item's pull-down menu.
+@available(iOS 26.0, *)
+struct CNNavBarMenuItem: Equatable {
+  let label: String
+  let symbol: String?
+  let destructive: Bool
 }
 
 /// One glass capsule in the bar. Groups keep their glass identity across
@@ -24,6 +34,20 @@ struct CNNavBarGroup: Identifiable, Equatable {
   /// Fixed capsule width (height stays 44, so 44 makes a circle). Labels
   /// then don't widen it: no label padding, a tight icon + text layout.
   let width: CGFloat?
+
+  /// Same capsule on screen. Menu contents are left out: they only show
+  /// once the menu opens, so changing them (Pin -> Unpin) mustn't pulse.
+  func looksLike(_ other: CNNavBarGroup) -> Bool {
+    func look(_ g: CNNavBarGroup) -> [CNNavBarItem] {
+      g.items.map {
+        CNNavBarItem(
+          id: $0.id, symbol: $0.symbol, symbolSize: $0.symbolSize, label: $0.label,
+          labelSize: $0.labelSize, color: $0.color, enabled: $0.enabled, menu: nil
+        )
+      }
+    }
+    return id == other.id && tint == other.tint && width == other.width && look(self) == look(other)
+  }
 }
 
 @available(iOS 26.0, *)
@@ -38,6 +62,8 @@ final class CNNavigationBarModel: ObservableObject {
   var horizontalPadding: CGFloat = 16
   var groupSpacing: CGFloat = 10
   var onPressed: (String) -> Void = { _ in }
+  /// An item's menu action was chosen: item id, action index.
+  var onMenuSelected: (String, Int) -> Void = { _, _ in }
   /// Receives the frame of every group currently in the bar (bar
   /// coordinates, keyed by group id) whenever they change or are requested,
   /// so Flutter can let touches outside the buttons through.
@@ -86,7 +112,7 @@ final class CNNavigationBarModel: ObservableObject {
     let old = Dictionary((leading + trailing).map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
     for group in newLeading + newTrailing {
       guard let previous = old[group.id] else { continue }
-      if pulseAll || previous != group {
+      if pulseAll || !previous.looksLike(group) {
         pulses[group.id, default: 0] += 1
       }
     }
@@ -108,7 +134,16 @@ final class CNNavigationBarModel: ObservableObject {
           label: item["label"] as? String,
           labelSize: (item["labelSize"] as? NSNumber).map { CGFloat(truncating: $0) } ?? 17,
           color: (item["color"] as? NSNumber).map { colorFromARGB($0.intValue) },
-          enabled: (item["enabled"] as? NSNumber)?.boolValue ?? true
+          enabled: (item["enabled"] as? NSNumber)?.boolValue ?? true,
+          menu: (item["menu"] as? [[String: Any]]).map { actions in
+            actions.map {
+              CNNavBarMenuItem(
+                label: $0["label"] as? String ?? "",
+                symbol: $0["symbol"] as? String,
+                destructive: ($0["destructive"] as? NSNumber)?.boolValue ?? false
+              )
+            }
+          }
         )
       }
       let tint = (dict["tint"] as? NSNumber).map { colorFromARGB($0.intValue) }
@@ -217,9 +252,7 @@ struct CNNavigationBarSwiftUI: View {
     let stack = vertical ? AnyLayout(VStackLayout(spacing: 0)) : AnyLayout(HStackLayout(spacing: 0))
     stack {
       ForEach(group.items) { item in
-        Button {
-          model.onPressed(item.id)
-        } label: {
+        itemControl(item) {
           itemLabel(item, compact: fixedWidth != nil, iconOnly: vertical)
             .foregroundStyle(item.color ?? foreground)
             .frame(minWidth: fixedWidth == nil ? (isMulti ? 36 : 44) : nil, minHeight: 44)
@@ -247,6 +280,43 @@ struct CNNavigationBarSwiftUI: View {
       in: .capsule
     )
     .glassEffectID(group.id, in: namespace)
+  }
+
+  /// A plain button, or, for an item with a menu, a pull-down menu anchored
+  /// to it (the item's press is then never reported).
+  @ViewBuilder
+  private func itemControl<Content: View>(
+    _ item: CNNavBarItem, @ViewBuilder label: () -> Content
+  ) -> some View {
+    let content = label()
+    if let menu = item.menu {
+      Menu {
+        ForEach(menu.indices, id: \.self) { index in
+          let action = menu[index]
+          Button(role: action.destructive ? .destructive : nil) {
+            model.onMenuSelected(item.id, index)
+          } label: {
+            if let symbol = action.symbol {
+              Label(action.label, systemImage: symbol)
+            } else {
+              Text(action.label)
+            }
+          }
+        }
+      } label: {
+        content
+      }
+      .menuStyle(.button)
+      .menuIndicator(.hidden)
+      // Actions top to bottom as given, wherever the menu opens.
+      .menuOrder(.fixed)
+    } else {
+      Button {
+        model.onPressed(item.id)
+      } label: {
+        content
+      }
+    }
   }
 
   @ViewBuilder
