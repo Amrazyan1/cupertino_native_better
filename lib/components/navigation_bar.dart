@@ -962,8 +962,9 @@ class _CNNavigationBarScopeState extends State<CNNavigationBarScope> {
     return leading + between + trailing + 12;
   }
 
-  /// Places the vertical bar on [edge]: centred in the safe-area strip on
-  /// that side when it is wide enough (otherwise flush with the screen edge),
+  /// Places the vertical bar on [edge]: centred on the camera at the top of
+  /// that side's safe-area strip, like the status items, else in the strip
+  /// when it is wide enough (otherwise flush with the screen edge),
   /// starting below whatever the system keeps at the top of the strip — the
   /// status bar, the camera — or the top safe area.
   CNVerticalBarColumn _verticalColumn(
@@ -974,7 +975,29 @@ class _CNNavigationBarScopeState extends State<CNNavigationBarScope> {
   ) {
     final width = MediaQuery.sizeOf(context).width;
     final strip = edge == CNVerticalBarEdge.left ? padding.left : padding.right;
-    final inset = strip >= widget.height ? (strip - widget.height) / 2 : 0.0;
+    var inset = strip >= widget.height ? (strip - widget.height) / 2 : 0.0;
+    // The system centres its status items (clock, Wi-Fi) on the camera, not
+    // on the safe-area strip: line up with the narrowest occlusion at the top
+    // of the strip when there is one.
+    final stripLeft = edge == CNVerticalBarEdge.left ? 0.0 : width - strip;
+    final stripRight = stripLeft + strip;
+    final cameras =
+        layout
+            .regions(CNReservedRegionKind.occlusion)
+            .map((r) => r.frame)
+            .where(
+              (f) =>
+                  f.left >= stripLeft - 1 &&
+                  f.right <= stripRight + 1 &&
+                  f.top < padding.top + 44,
+            )
+            .toList()
+          ..sort((a, b) => a.width.compareTo(b.width));
+    if (strip > 0 && cameras.isNotEmpty) {
+      final centre = cameras.first.center.dx;
+      final fromEdge = edge == CNVerticalBarEdge.left ? centre : width - centre;
+      inset = (fromEdge - widget.height / 2).clamp(0.0, double.infinity);
+    }
     final left = edge == CNVerticalBarEdge.left
         ? inset
         : width - inset - widget.height;
